@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Untitled document</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!--
+    ============================================================
+    DECORATIVE CHROME — everything in <header> and .toolbar is
+    set dressing. No IDs, no event listeners, nothing for
+    script.js to touch. aria-hidden keeps screen readers out of
+    the fake UI so they land straight on the document.
+    ============================================================
+  -->
+  <header class="chrome" aria-hidden="true">
+
+    <div class="chrome-top">
+      <div class="doc-icon"></div>
+
+      <div class="chrome-titles">
+        <!-- Looks like an editable title, is a plain div. -->
+        <div class="doc-title">Untitled document</div>
+
+        <div class="menu">
+          <span>File</span>
+          <span>Edit</span>
+          <span>View</span>
+          <span>Insert</span>
+          <span>Format</span>
+          <span>Tools</span>
+          <span>Extensions</span>
+          <span>Help</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <span class="tool">&#8630;</span>
+      <span class="tool">&#8631;</span>
+      <span class="tool">&#128424;</span>
+      <span class="tool">A&#803;</span>
+      <span class="divider"></span>
+      <span class="tool wide">100%</span>
+      <span class="divider"></span>
+      <span class="tool wide">Normal text &#9662;</span>
+      <span class="divider"></span>
+      <span class="tool wide">Arial &#9662;</span>
+      <span class="divider"></span>
+      <span class="tool">&minus;</span>
+      <span class="tool boxed">11</span>
+      <span class="tool">+</span>
+      <span class="divider"></span>
+      <span class="tool bold">B</span>
+      <span class="tool italic">I</span>
+      <span class="tool underline">U</span>
+      <span class="tool swatch"></span>
+      <span class="divider"></span>
+      <span class="tool">&#9776;</span>
+      <span class="tool">&#8801;</span>
+      <span class="tool">&#8942;</span>
+    </div>
+
+  </header>
+
+  <!--
+    ============================================================
+    THE ACTUAL APP — the only three things script.js knows about
+    are #page, #log and #composer.
+    ============================================================
+  -->
+  <main class="canvas">
+    <div class="page" id="page">
+
+      <!-- Your lines and the app's replies get appended here. -->
+      <div id="log"></div>
+
+      <!-- Chromeless textarea: looks like typing straight into the doc. -->
+      <textarea
+        id="composer"
+        rows="1"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Start writing..."
+        aria-label="Journal entry"></textarea>
+
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

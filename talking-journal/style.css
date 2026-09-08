@@ -1,0 +1,281 @@
+/* ============================================================
+   A Journal That Talks Back
+   Layout is two pieces: fixed decorative chrome at the top,
+   and a scrolling gray canvas holding one white "page".
+   ============================================================ */
+
+:root {
+  --docs-gray-backdrop: #f1f3f4;
+  --docs-border: #e0e0e0;
+  --docs-text: #202124;
+  --docs-muted: #5f6368;
+  --docs-toolbar-bg: #edf2fa;
+  --docs-blue: #1a73e8;
+
+  --entry-text: #202124;
+  --reply-text: #80868b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--docs-gray-backdrop);
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--docs-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   DECORATIVE CHROME
+   Sticks to the top; the canvas scrolls underneath it.
+   ============================================================ */
+
+.chrome {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  padding: 8px 16px 0;
+  user-select: none;
+  cursor: default;
+}
+
+.chrome-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+/* Blue document icon, faked with a rectangle + clipped corner. */
+.doc-icon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  margin-top: 2px;
+  background: var(--docs-blue);
+  border-radius: 2px;
+  clip-path: polygon(0 0, 72% 0, 100% 22%, 100% 100%, 0 100%);
+}
+
+.chrome-titles {
+  min-width: 0;
+}
+
+.doc-title {
+  font-size: 18px;
+  line-height: 24px;
+  color: var(--docs-text);
+  padding: 2px 4px;
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.menu {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+  color: #444746;
+  padding-left: 4px;
+  flex-wrap: wrap;
+}
+
+/* Rounded gray pill, like the current Docs toolbar. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--docs-toolbar-bg);
+  border-radius: 24px;
+  padding: 4px 10px;
+  margin: 6px 0 10px;
+  font-size: 14px;
+  color: #444746;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.tool.wide {
+  min-width: auto;
+  padding: 0 8px;
+}
+
+.tool.boxed {
+  background: #fff;
+  border-radius: 2px;
+  min-width: 34px;
+  height: 22px;
+  font-size: 13px;
+}
+
+.tool.bold      { font-weight: 700; }
+.tool.italic    { font-style: italic; font-family: Georgia, serif; }
+.tool.underline { text-decoration: underline; }
+
+/* Text-color "A" with a red bar under it. */
+.tool.swatch {
+  width: 22px;
+  height: 22px;
+  background:
+    linear-gradient(#ea4335, #ea4335) bottom / 16px 3px no-repeat;
+  position: relative;
+}
+.tool.swatch::before {
+  content: "A";
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: #c7c7c7;
+  margin: 0 6px;
+  flex: none;
+}
+
+/* ============================================================
+   THE PAGE
+   ============================================================ */
+
+.canvas {
+  padding: 24px 16px 120px;
+}
+
+.page {
+  width: 100%;
+  max-width: 816px;          /* 8.5in at 96dpi, same as Docs */
+  min-height: 1056px;        /* 11in */
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid var(--docs-border);
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.15),
+              0 4px 8px rgba(60, 64, 67, 0.08);
+  padding: 96px 72px;        /* 1in top/bottom, 0.75in sides */
+  cursor: text;              /* whole sheet reads as writable */
+}
+
+/* Shared body-text metrics for entries, replies and the composer,
+   so the composer is visually indistinguishable from a real line. */
+#log,
+#composer {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Your writing: normal document body text. */
+.entry {
+  margin: 0 0 14px;
+  color: var(--entry-text);
+  white-space: pre-wrap;     /* preserves spacing you typed */
+  word-wrap: break-word;
+}
+
+/* The app's reply: indented, italic, gray — a margin comment. */
+.reply {
+  margin: -6px 0 20px 36px;
+  color: var(--reply-text);
+  font-style: italic;
+  word-wrap: break-word;
+}
+
+/* Fade both in so lines arrive rather than snap in. */
+.entry,
+.reply {
+  animation: rise 260ms ease-out;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ============================================================
+   THINKING DOT
+   Shown during the pause. Sometimes it fades out with nothing
+   after it — that silence is a feature.
+   ============================================================ */
+
+.thinking {
+  height: 8px;
+  margin: -6px 0 20px 36px;
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.thinking.visible {
+  opacity: 1;
+}
+
+.thinking .dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #bdc1c6;
+  animation: breathe 1.1s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+/* ============================================================
+   COMPOSER
+   A textarea with every visual trace of being a control removed.
+   ============================================================ */
+
+#composer {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;          /* JS grows the height instead */
+  background: transparent;
+  color: var(--entry-text);
+  caret-color: var(--entry-text);
+}
+
+#composer::placeholder {
+  color: #bdc1c6;
+}
+
+/* ============================================================
+   SMALL SCREENS
+   Drop the paper margins so the text isn't a narrow column.
+   ============================================================ */
+
+@media (max-width: 700px) {
+  .page {
+    padding: 40px 24px;
+    min-height: 70vh;
+  }
+  .canvas {
+    padding: 12px 8px 80px;
+  }
+  .menu {
+    gap: 10px;
+    font-size: 13px;
+  }
+}
