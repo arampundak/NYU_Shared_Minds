@@ -74,6 +74,8 @@ body {
   border: 1px solid transparent;
   border-radius: 2px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* truncates on narrow screens, like Docs */
 }
 
 .menu {
@@ -160,14 +162,14 @@ body {
 
 .page {
   width: 100%;
-  max-width: 816px;          /* 8.5in at 96dpi, same as Docs */
-  min-height: 1056px;        /* 11in */
+  max-width: 940px;          /* a touch wider than a real Letter page */
+  min-height: 1200px;        /* scaled to keep roughly paper proportions */
   margin: 0 auto;
   background: #fff;
   border: 1px solid var(--docs-border);
   box-shadow: 0 1px 3px rgba(60, 64, 67, 0.15),
               0 4px 8px rgba(60, 64, 67, 0.08);
-  padding: 96px 72px;        /* 1in top/bottom, 0.75in sides */
+  padding: 104px 88px;       /* generous margins, scaled with the sheet */
   cursor: text;              /* whole sheet reads as writable */
 }
 
@@ -176,8 +178,8 @@ body {
 #log,
 #composer {
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 16.5px;
+  line-height: 1.65;
 }
 
 /* Your writing: normal document body text. */

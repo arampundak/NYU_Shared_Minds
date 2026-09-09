@@ -233,12 +233,19 @@ function hideThinking(wrap) {
   setTimeout(() => wrap.remove(), 260);
 }
 
-// Keep the newest line in view as the document grows.
-function scrollToBottom() {
-  window.scrollTo({
-    top: document.body.scrollHeight,
-    behavior: "smooth"
-  });
+// Keep the cursor in view as the document grows — but only when it
+// actually needs it. Scrolling to the bottom of the body would leap
+// past your text to the bottom of the blank sheet, since the page has
+// a fixed minimum height. So: measure where the composer sits, and if
+// it's still comfortably on screen, don't move at all.
+function keepCursorInView() {
+  const margin = 80;                       // breathing room below the line
+  const bottom = composer.getBoundingClientRect().bottom;
+  const overflow = bottom + margin - window.innerHeight;
+
+  if (overflow > 0) {
+    window.scrollBy({ top: overflow, behavior: "smooth" });
+  }
 }
 
 
@@ -259,7 +266,7 @@ function handleSubmit() {
   appendEntry(text);
   composer.value = "";
   autoGrow();
-  scrollToBottom();
+  keepCursorInView();
 
   const thinking = showThinking();
   const pause = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
@@ -270,7 +277,7 @@ function handleSubmit() {
 
     if (reply !== null) {
       appendReply(reply);
-      scrollToBottom();
+      keepCursorInView();
     }
     // If reply is null we do nothing, and the pause just sits there.
   }, pause);
