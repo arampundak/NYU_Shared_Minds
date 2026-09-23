@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faceted Self</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+<style>
+  :root { --ink:#111; --dim:#8a8a8a; --line:#e6e6e6; --accent:#111; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:#fff; color:var(--ink);
+    font:13px/1.4 system-ui, -apple-system, sans-serif; overflow:hidden; }
+  #stage { position:absolute; inset:0 0 124px 0; display:flex; align-items:center; justify-content:center; }
+  #stage canvas { display:block; cursor:pointer; }
+  #title { position:absolute; top:14px; left:18px; z-index:5; }
+  #title b { font-size:15px; letter-spacing:.04em; }
+  #status { color:var(--dim); margin-top:2px; min-height:1.2em; }
+  #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:50; transition:opacity .9s ease-out; }
+  #flash.on { opacity:1; transition:none; }
+  #bar { position:absolute; left:0; right:0; bottom:0; height:124px; border-top:1px solid var(--line);
+    display:flex; flex-direction:column; gap:8px; padding:10px 16px; background:#fff; }
+  #legend { display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; }
+  .sw { flex:none; width:52px; text-align:center; cursor:pointer; font-size:10px; color:var(--dim); }
+  .sw .t { width:52px; height:52px; border-radius:6px; background:#f2f2f2 center/cover; border:2px solid transparent; position:relative; }
+  .sw.busy .t::after { content:""; position:absolute; inset:0; border-radius:4px;
+    background:linear-gradient(90deg,transparent,rgba(0,0,0,.08),transparent); background-size:200% 100%; animation:sh 1.1s linear infinite; }
+  .sw.err .t { border-color:#e5484d; }
+  .sw:hover .t { border-color:#111; }
+  .sw span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  @keyframes sh { from { background-position:200% 0; } to { background-position:-200% 0; } }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  button { background:#fff; color:var(--ink); border:1px solid #d0d0d0; border-radius:999px; padding:5px 12px; font:inherit; cursor:pointer; }
+  button:hover { border-color:#111; }
+  details { margin-left:auto; color:var(--dim); }
+  details input { border:1px solid #d0d0d0; border-radius:6px; padding:4px 6px; width:190px; font:inherit; }
+  #camMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--dim); pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="camMsg">allow the camera…</div></div>
+<div id="title"><b>FACETED SELF</b><div id="status"></div></div>
+<div id="flash"></div>
+<div id="bar">
+  <div id="legend"></div>
+  <div class="row">
+    <button data-pattern="scatter">Scatter</button>
+    <button data-pattern="rings">Rings</button>
+    <button data-pattern="split">Split</button>
+    <button data-pattern="stripes">Stripes</button>
+    <button id="resetShapeBtn">Reset shape</button>
+    <button id="retakeBtn">Retake</button>
+    <button id="flattenBtn">Flatten → PNG</button>
+    <button id="exportBtn">Export JSON</button>
+    <details><summary>proxy token</summary><input id="token" type="password" placeholder="optional auth token"></details>
+  </div>
+</div>
+
+<script>
+// ================= config =================
+const PROXY = "https://itp-ima-replicate-proxy.web.app/api/create_n_get";
+const MODEL = "google/nano-banana-2";
+const STORE = "facetedSelf.v2";
+const SIZE = 640;              // working resolution of every layer
+const GRID = 16;               // cells per side
+
+const KEEP = "Keep the exact same person, face, expression, pose, head position, size and framing so it lines up with the original. Keep the background pure solid white.";
+const ENHANCE_PROMPT =
+  "Turn this webcam selfie into a sharp, high-resolution, finely detailed studio portrait photograph of the same person: crisp skin texture, eyes and hair, soft even light. " +
+  "Remove the background completely and replace it with pure solid white (#FFFFFF). Head and shoulders only. Keep the exact same identity, expression, pose, head position and framing.";
+
+// Chosen to be as far apart as possible: flat vs deep, line vs mass, warm vs cold, sacred vs pop
+const STYLES = [
+  { name: "Photo",       kind: "photo" },
+  { name: "Average",     kind: "avg" },    // computed locally: one color per cell, no AI
+  { name: "Byzantine",   kind: "ai", prompt: "a Byzantine icon: flat frontal figure, heavy black contours, egg tempera, burnished gold halo, deep lapis blue and cinnabar red robes" },
+  { name: "Renaissance", kind: "ai", prompt: "a Leonardo da Vinci oil portrait: sfumato, warm umber and olive glazes, dramatic chiaroscuro, fine craquelure varnish" },
+  { name: "Cubism",      kind: "ai", prompt: "a 1910 Picasso/Braque analytic Cubist painting: the face shattered into overlapping angular planes seen from several viewpoints at once, grey and ochre only" },
+  { name: "Suprematism", kind: "ai", prompt: "a Malevich Suprematist composition: the face built only from flat hard-edged geometric shapes — squares, bars, circles — in black, red, yellow and blue" },
+  { name: "Ukiyo-e",     kind: "ai", prompt: "a Japanese Edo-period ukiyo-e woodblock print: flowing black keyblock outlines, flat Prussian blue and pale vermilion fills, washi paper grain" },
+  { name: "Pop art",     kind: "ai", prompt: "a Warhol silkscreen pop art print: flat neon magenta, cyan and yellow blocks, misregistered black ink, Ben-Day dots" },
+  { name: "Anime",       kind: "ai", prompt: "a 1990s Japanese anime cel: large expressive eyes, crisp line art, two-tone cel shading, saturated flat colors" },
+  { name: "Chuck Close", kind: "ai", prompt: "a late Chuck Close painting: the face made of a tilted grid of cells, each filled with colorful concentric rings, ovals and lozenges" },
+  { name: "Charcoal",    kind: "ai", prompt: "a raw expressive charcoal drawing on white paper: smudged black charcoal, fast gestural hatching, no color at all" },
+];
+
+// ================= state (this object is the JSON) =================
+let state = { grid: GRID, cells: [], raw: null, photo: null,
+  shape: { cols: new Array(GRID).fill(1), rows: new Array(GRID).fill(1) },   // the sculpted stretch, 1 = even
+  styles: STYLES.map(s => ({ ...s, img: null })) };
+const layers = [];          // p5.Image per style index
+const busy = {}, failed = {};
+let video, avgG, rawImg, side, captured = false;
+let colW = [], rowH = [];
+const K = 5, SIGMA = 0.13;  // fisheye strength & focus width
+let frozen = false;         // click toggles: frozen ↔ sculpting
+
+// ================= p5 =================
+function setup() {
+  side = stageSide();
+  createCanvas(side, side).parent("stage");
+  pixelDensity(1);
+  avgG = createGraphics(GRID, GRID); avgG.pixelDensity(1);
+  state.cells = new Array(GRID * GRID).fill(0);
+  video = createCapture(VIDEO, () => {
+    document.getElementById("camMsg").remove();
+    setTimeout(autoCapture, 1400);          // let the camera settle its exposure, then surprise
+  });
+  video.size(640, 480); video.hide();
+  initUI();
+}
+function stageSide() { return Math.floor(Math.min(innerWidth - 32, innerHeight - 124 - 70)); }
+function windowResized() { side = stageSide(); resizeCanvas(side, side); colW = []; rowH = []; }
+
+function draw() {
+  background(255);
+  const base = captured ? (layers[0] || rawImg) : liveFrame();
+  if (!base) return;
+
+  avgG.image(base, 0, 0, GRID, GRID);
+  avgG.loadPixels();
+
+  // fisheye: every column/row grows with a Gaussian falloff around the mouse,
+  // added on top of whatever shape earlier freezes have sculpted
+  const inside = mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height;
+  const k = inside && !frozen ? K : 0;
+  const tc = fisheye(state.shape.cols, mouseX / width, k), tr = fisheye(state.shape.rows, mouseY / height, k);
+  if (!colW.length) { colW = tc.slice(); rowH = tr.slice(); }
+  for (let i = 0; i < GRID; i++) { colW[i] = lerp(colW[i], tc[i], 0.16); rowH[i] = lerp(rowH[i], tr[i], 0.16); }
+
+  const s = SIZE / GRID;
+  noStroke();
+  let y = 0;
+  for (let j = 0; j < GRID; j++) {
+    let x = 0;
+    for (let i = 0; i < GRID; i++) {
+      const w = colW[i], h = rowH[j];
+      const idx = captured ? state.cells[j * GRID + i] : 0;
+      const kind = state.styles[idx].kind;
+      if (kind === "avg") {
+        const p = (j * GRID + i) * 4;
+        fill(avgG.pixels[p], avgG.pixels[p + 1], avgG.pixels[p + 2]);
+        rect(x, y, w + 0.6, h + 0.6);
+      } else {
+        const layer = kind === "ai" && layers[idx] ? layers[idx] : base;
+        image(layer, x, y, w + 0.6, h + 0.6, i * s, j * s, s, s);   // +0.6 hides seams
+      }
+      x += w;
+    }
+    y += rowH[j];
+  }
+}
+
+function fisheye(base, focus, k) {
+  const ws = []; let sum = 0;
+  for (let i = 0; i < GRID; i++) {
+    const d = (i + 0.5) / GRID - focus;
+    const w = base[i] + k * Math.exp(-(d * d) / (2 * SIGMA * SIGMA));
+    ws.push(w); sum += w;
+  }
+  return ws.map(w => (w / sum) * side);
+}
+
+let liveG;
+function liveFrame() {
+  if (!video || !video.loadedmetadata) return null;
+  if (!liveG) { liveG = createGraphics(SIZE, SIZE); liveG.pixelDensity(1); }
+  const vw = video.width, vh = video.height, m = Math.min(vw, vh);
+  liveG.push(); liveG.translate(SIZE, 0); liveG.scale(-1, 1);          // selfie mirror
+  liveG.image(video, 0, 0, SIZE, SIZE, (vw - m) / 2, (vh - m) / 2, m, m);
+  liveG.pop();
+  return liveG;
+}
+
+// click: freeze the stretch exactly as it looks now · click again: keep sculpting on top of it
+function mousePressed() {
+  if (!captured || mouseX < 0 || mouseY < 0 || mouseX > width || mouseY > height) return;
+  if (!frozen) {
+    // bake what's on screen into the shape (as fractions, mean = 1)
+    state.shape.cols = colW.map(w => (w / side) * GRID);
+    state.shape.rows = rowH.map(h => (h / side) * GRID);
+    frozen = true;
+    say("frozen · click to keep deforming");
+  } else {
+    frozen = false;
+    say("deforming · click to freeze");
+  }
+  persist();
+}
+function resetShape() {
+  state.shape = { cols: new Array(GRID).fill(1), rows: new Array(GRID).fill(1) };
+  frozen = false; persist(); say("shape reset · click to freeze");
+}
+
+// ================= the pipeline =================
+async function autoCapture() {
+  const g = liveFrame(); if (!g) return setTimeout(autoCapture, 300);
+  const f = document.getElementById("flash");
+  f.classList.add("on"); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove("on")));
+
+  state.raw = g.elt.toDataURL("image/jpeg", 0.92);
+  state.photo = null; state.styles.forEach(s => s.img = null);
+  state.cells.fill(0); layers.length = 0;
+  rawImg = await new Promise(r => loadImage(state.raw, r));
+  captured = true;
+  renderLegend();
+
+  // 1. enhance + white background
+  say("got you. enhancing & cutting out the background…");
+  busy[0] = true; renderLegend();
+  try {
+    const url = await askReplicate({ prompt: ENHANCE_PROMPT, image_input: [state.raw], aspect_ratio: "1:1", output_format: "jpg" });
+    state.photo = await bake(url);
+    layers[0] = await new Promise(r => loadImage(state.photo, r));
+  } catch (e) {
+    say("enhance failed (" + e.message + ") — using the raw photo"); state.photo = state.raw; layers[0] = rawImg;
+  }
+  busy[0] = false; renderLegend(); persist();
+
+  // 2. every style in parallel; as each arrives it takes over a scatter of cells
+  say("painting you in " + (state.styles.length - 2) + " styles…");
+  const jobs = state.styles.map((s, i) => i).filter(i => state.styles[i].kind === "ai");
+  let done = 0;
+  await Promise.all(jobs.map(async i => {
+    await generateStyle(i);
+    say(`painting… ${++done}/${jobs.length}`);
+  }));
+  say("move to stretch · click to freeze · click again to keep deforming");
+}
+
+async function generateStyle(i) {
+  const st = state.styles[i];
+  busy[i] = true; failed[i] = false; renderLegend();
+  try {
+    const url = await askReplicate({ prompt: `Repaint this portrait as ${st.prompt}. ${KEEP}`, image_input: [state.photo], aspect_ratio: "1:1", output_format: "jpg" });
+    st.img = await bake(url);
+    layers[i] = await new Promise(r => loadImage(st.img, r));
+    // reveal: this style claims a random share of the face
+    for (let k = 0; k < state.cells.length; k++) if (Math.random() < 0.14) state.cells[k] = i;
+    persist();
+  } catch (e) { failed[i] = true; console.error(st.name, e); }
+  busy[i] = false; renderLegend();
+}
+
+async function askReplicate(input) {
+  const headers = { "Content-Type": "application/json", Accept: "application/json" };
+  const tok = document.getElementById("token").value.trim();
+  if (tok) headers.Authorization = "Bearer " + tok;
+  const body = { model: MODEL, input };
+  console.log("→ ITP proxy", body.model, input.prompt.slice(0, 80));
+  const res = await fetch(PROXY, { method: "POST", headers, body: JSON.stringify(body) });
+  const json = await res.json();
+  console.log("← replicate said", json);
+  if (json.error || !json.output) throw new Error(json.error || "no output — see console");
+  return Array.isArray(json.output) ? json.output[0] : json.output;
+}
+
+// Replicate URLs expire — keep the pixels as base64 JPEG in the JSON
+function bake(url) {
+  return new Promise(resolve => {
+    const im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = () => {
+      const c = document.createElement("canvas"); c.width = c.height = SIZE;
+      const ctx = c.getContext("2d"), m = Math.min(im.width, im.height);
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, SIZE, SIZE);
+      ctx.drawImage(im, (im.width - m) / 2, (im.height - m) / 2, m, m, 0, 0, SIZE, SIZE);
+      try { resolve(c.toDataURL("image/jpeg", 0.85)); } catch (e) { resolve(url); }
+    };
+    im.onerror = () => resolve(url);
+    im.src = url;
+  });
+}
+
+// ================= compositions =================
+function available() { return state.styles.map((s, i) => i).filter(i => state.styles[i].kind !== "ai" || layers[i]); }
+function pattern(name, only) {
+  const av = available(), c = (GRID - 1) / 2;
+  for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
+    let s = 0;
+    if (name === "whole") s = only;
+    if (name === "scatter") s = random(av);
+    if (name === "rings") s = av[Math.floor(Math.hypot(i - c, j - c) / 1.2) % av.length];
+    if (name === "split") s = i < GRID / 2 ? 0 : av[av.length - 1];
+    if (name === "stripes") s = av[Math.floor(i / 2) % av.length];
+    state.cells[j * GRID + i] = s;
+  }
+  persist();
+}
+
+// ================= storage / UI =================
+function persist() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { console.warn("localStorage", e); } }
+function say(m) { document.getElementById("status").textContent = m; }
+
+function renderLegend() {
+  const box = document.getElementById("legend"); box.innerHTML = "";
+  state.styles.forEach((st, i) => {
+    const thumb = st.kind === "ai" ? st.img : st.kind === "photo" ? (state.photo || state.raw) : null;
+    const d = document.createElement("div");
+    d.className = "sw" + (busy[i] ? " busy" : "") + (failed[i] ? " err" : "");
+    d.title = failed[i] ? "failed — click to retry" : (st.prompt || "") + "  (click: whole face in this style)";
+    d.innerHTML = `<div class="t" style="${thumb ? `background-image:url(${thumb})` : st.kind === "avg" ? "background:repeating-conic-gradient(#c9a38a 0 25%,#8aa0b8 0 50%) 0 0/26px 26px" : ""}"></div><span>${st.name}</span>`;
+    d.onclick = () => {
+      if (failed[i] && state.photo) return generateStyle(i);
+      if (st.kind === "ai" && !layers[i]) return;
+      pattern("whole", i);
+    };
+    box.appendChild(d);
+  });
+}
+
+function initUI() {
+  renderLegend();
+  document.querySelectorAll("[data-pattern]").forEach(b => b.onclick = () => captured && pattern(b.dataset.pattern));
+  document.getElementById("resetShapeBtn").onclick = resetShape;
+  document.getElementById("retakeBtn").onclick = () => { captured = false; frozen = false; state.shape = { cols: new Array(GRID).fill(1), rows: new Array(GRID).fill(1) }; say(""); setTimeout(autoCapture, 900); };
+  document.getElementById("flattenBtn").onclick = () => saveCanvas("faceted-self", "png");
+  document.getElementById("exportBtn").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+    a.download = "faceted-self.json"; a.click();
+  };
+  const tok = document.getElementById("token");
+  try { tok.value = localStorage.getItem(STORE + ".token") || ""; } catch (e) {}
+  tok.onchange = () => { try { localStorage.setItem(STORE + ".token", tok.value); } catch (e) {} };
+}
+</script>
+</body>
+</html>
