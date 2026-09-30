@@ -205,7 +205,12 @@ rememberButtonEl.addEventListener("click", async () => {
     rememberStatusEl.textContent = "remembered — a little different now.";
   } catch (error) {
     console.error(error);
-    rememberStatusEl.textContent = `couldn't remember it: ${error.message}`;
+    // The AI model behind this is flaky and occasionally fails every retry
+    // in a row — it's not broken, just unlucky. Clicking Remember again
+    // almost always works.
+    rememberStatusEl.textContent =
+      `couldn't remember it this time (${error.message}) — the AI is a bit ` +
+      `unreliable, try clicking Remember again.`;
   } finally {
     rememberButtonEl.disabled = false;
   }

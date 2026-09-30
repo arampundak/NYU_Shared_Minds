@@ -19,12 +19,12 @@ const RESTORE_PROMPT =
   "Restore this damaged, glitched photograph. Repair the corrupted areas " +
   "so it looks like an intact 1990s photo.";
 
-// This shared class proxy occasionally fails a prediction for no fault of
-// ours — the underlying model returns "Failed to generate image" now and
-// then, or the proxy itself briefly 502s under load. Retrying the same
-// image a moment later usually succeeds, so we try a few times before
-// giving up and showing an error.
-const MAX_ATTEMPTS = 3;
+// The underlying model (Gemini, behind this shared class proxy) fails a
+// restoration attempt for no fault of ours surprisingly often — testing
+// showed the exact same request succeeding on one try and failing the next
+// with "Failed to generate image." Retrying the same image a moment later
+// usually works, so we try quite a few times before giving up.
+const MAX_ATTEMPTS = 6;
 const RETRY_DELAY_MS = 1500;
 
 function wait(ms) {
