@@ -19,7 +19,8 @@
     .sub { color: var(--dim); margin: 4px 0 40px; }
     ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
     li { border-bottom: 1px solid var(--line); }
-    a { display: flex; gap: 16px; padding: 16px 0; color: inherit; text-decoration: none; }
+    a, .none { display: flex; gap: 16px; padding: 16px 0; color: inherit; text-decoration: none; }
+    .none { color: var(--dim); }
     a:hover .title { text-decoration: underline; }
     .week { color: var(--dim); min-width: 5.5em; font-variant-numeric: tabular-nums; }
   </style>
@@ -33,20 +34,22 @@
 
   <script>
     // Add one line per week: [week number, folder, title]
+    // Use null for the folder to list a week without a link.
     const WEEKS = [
       [1, "01-talking-journal",   "Talking Journal"],
-      [2, "02-not-submitted",     "Not Submitted"],
+      [2, null,                   "Not submitted"],
       [3, "03-implicit-explicit", "Implicit / Explicit: Faceted Self"],
     ];
 
     const list = document.getElementById("weeks");
     for (const [n, folder, title] of WEEKS) {
       const li = document.createElement("li");
-      const a = document.createElement("a");
-      a.href = folder + "/";
-      a.innerHTML = `<span class="week">Week ${n}</span><span class="title"></span>`;
-      a.querySelector(".title").textContent = title;
-      li.appendChild(a);
+      const row = document.createElement(folder ? "a" : "div");
+      if (folder) row.href = folder + "/";
+      else row.className = "none";
+      row.innerHTML = `<span class="week">Week ${n}</span><span class="title"></span>`;
+      row.querySelector(".title").textContent = title;
+      li.appendChild(row);
       list.appendChild(li);
     }
   </script>
