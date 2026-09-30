@@ -8,4 +8,4 @@ Course assignments for NYU Shared Minds.
 - [02 - Not submitted](02-not-submitted/README.md)
 - [03 - Implicit / Explicit: Faceted Self](03-implicit-explicit/index.html)
 
-The GitHub Pages site opens assignment 3 from the root entrypoint.
+The GitHub Pages root (`index.html`) is a portfolio index linking to each week. To add a week, add one line to the `WEEKS` array at the bottom of `index.html`.
