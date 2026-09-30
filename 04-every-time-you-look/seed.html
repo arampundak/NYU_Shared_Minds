@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seed — Every Time You Look</title>
+  <style>
+    body {
+      max-width: 640px;
+      margin: 60px auto;
+      padding: 0 20px;
+      font-family: -apple-system, sans-serif;
+      color: #222;
+    }
+    .warning {
+      background: #fff3cd;
+      border: 1px solid #e0c36a;
+      padding: 16px;
+      margin-bottom: 24px;
+      font-size: 0.9rem;
+    }
+    button {
+      font-size: 1rem;
+      padding: 10px 20px;
+      margin-right: 12px;
+      margin-bottom: 24px;
+      cursor: pointer;
+    }
+    #reset-button {
+      background: #f6d6d6;
+    }
+    pre {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      padding: 12px;
+      white-space: pre-wrap;
+      font-size: 0.85rem;
+      min-height: 100px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Seed the database</h1>
+
+  <div class="warning">
+    <strong>Admin tool — not part of the public site.</strong>
+    This page writes directly to the shared Firestore database used by
+    <a href="index.html">index.html</a>. Only run "Seed" once, when the
+    collection is empty or you want to start over. "Reset" wipes everyone's
+    progress back to the original photos.
+  </div>
+
+  <button id="seed-button">Seed all 9 memories</button>
+  <button id="reset-button">Reset all to original</button>
+
+  <pre id="status"></pre>
+
+  <script type="module" src="js/seed.js"></script>
+</body>
+</html>

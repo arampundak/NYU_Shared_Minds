@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Every Time You Look</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="page-header">
+    <h1>Every Time You Look</h1>
+    <p class="subtitle">The more it is remembered, the more it is forgotten.</p>
+  </header>
+
+  <p class="visitor-note" id="visitor-note"></p>
+
+  <!-- The 3x3 grid of photos. Filled in by js/main.js. -->
+  <div class="grid" id="grid"></div>
+
+  <!-- The full-size overlay for one photo. Hidden until you click a tile. -->
+  <div class="overlay" id="overlay" hidden>
+    <div class="overlay-card">
+      <button class="overlay-close" id="overlay-close" aria-label="Close">&times;</button>
+
+      <div class="overlay-image-column">
+        <img id="overlay-image" alt="">
+        <h2 class="overlay-title" id="overlay-title"></h2>
+        <p class="overlay-source" id="overlay-source"></p>
+        <p class="overlay-stats" id="overlay-stats"></p>
+        <button class="remember-button" id="remember-button">Remember</button>
+        <p class="remember-status" id="remember-status"></p>
+      </div>
+
+      <div class="overlay-base64-column">
+        <h3>the image, as data — characters changed by this look are highlighted</h3>
+        <div class="base64-box mono" id="base64-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="page-footer">
+    These are standard test images, used since the 1990s to measure how pictures degrade.
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
