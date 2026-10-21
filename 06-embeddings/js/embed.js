@@ -48,3 +48,18 @@ export function steer(vector, direction, amount) {
   const length = Math.hypot(...blended);
   return blended.map((v) => v / length);
 }
+
+// Every embedding shares a big common component (any two rooms already score
+// about 0.44), which drowns out small steering and makes a few "hub" rooms win
+// for every word. Subtracting the average of all rooms removes it.
+export function meanVector(vectors) {
+  const mean = new Array(vectors[0].length).fill(0);
+  for (const vector of vectors) vector.forEach((v, i) => { mean[i] += v / vectors.length; });
+  return mean;
+}
+
+export function centered(vector, mean) {
+  const shifted = vector.map((v, i) => v - mean[i]);
+  const length = Math.hypot(...shifted);
+  return shifted.map((v) => v / length);
+}

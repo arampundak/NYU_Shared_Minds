@@ -18,7 +18,6 @@ let painting = null;
 let characterX = ROOM_WIDTH / 2;
 let targetX = characterX;
 let lastTime = null;
-let running = false;
 
 // A stand-in until the selfie avatar exists (stage 7). Cartoon proportions
 // like the adventure games: big head, small body, about 28% of the room tall.
@@ -114,17 +113,16 @@ function drawGlow(door) {
   ctx.restore();
 }
 
-function drawLabel(door) {
+function drawLabel(text, centerX, y) {
   ctx.font = "bold 15px system-ui, sans-serif";
-  const textWidth = ctx.measureText(door.label).width;
-  const x = Math.max(8, Math.min(ROOM_WIDTH - textWidth - 24, door.x - textWidth / 2 - 8));
-  const y = door.baseY - door.height - 34;
+  const textWidth = ctx.measureText(text).width;
+  const x = Math.max(8, Math.min(ROOM_WIDTH - textWidth - 24, centerX - textWidth / 2 - 8));
   ctx.fillStyle = "rgba(0,0,0,0.75)";
   ctx.beginPath();
   ctx.roundRect(x, y, textWidth + 16, 24, 6);
   ctx.fill();
   ctx.fillStyle = "#fff";
-  ctx.fillText(door.label, x + 8, y + 17);
+  ctx.fillText(text, x + 8, y + 17);
 }
 
 // Painted doors never land exactly on the marks, so be generous.
@@ -137,53 +135,109 @@ function doorAt(px, py) {
   );
 }
 
-let hoveredDoor = null;
-let pendingDoor = null;   // the door we're walking toward, if any
-let locked = false;       // true while a door is being walked through
-let onDoor = async () => {};
+// The object hidden in this room, drawn as a twinkling sparkle on the floor.
+const SPARKLE_RADIUS = 24;
+let roomObject = null; // { name, x, y }
 
-function draw() {
+// A small stable hash, so a room's sparkle sits in the same place for everyone.
+function hashOf(text, salt) {
+  let h = 2166136261 ^ salt;
+  for (const char of text) h = Math.imul(h ^ char.charCodeAt(0), 16777619);
+  return (h >>> 0) / 4294967296;
+}
+
+// Show (or clear, with null) the hidden object for the room being shown.
+export function setRoomObject(roomId, object) {
+  if (!object) {
+    roomObject = null;
+    return;
+  }
+  const minY = FLOOR_TOP + 50;
+  roomObject = {
+    name: object.name,
+    x: 70 + hashOf(roomId, 1) * (ROOM_WIDTH - 140),
+    y: minY + hashOf(roomId, 2) * (ROOM_HEIGHT - 30 - minY),
+  };
+}
+
+function drawSparkle(time) {
+  const pulse = 0.8 + 0.2 * Math.sin(time / 220);
+  ctx.save();
+  ctx.translate(roomObject.x, roomObject.y);
+
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, SPARKLE_RADIUS * pulse);
+  glow.addColorStop(0, "rgba(255, 244, 170, 0.9)");
+  glow.addColorStop(1, "rgba(255, 244, 170, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, SPARKLE_RADIUS * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.rotate(time / 1500);
+  ctx.fillStyle = "#fffbe0";
+  ctx.strokeStyle = "#c9a227";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const radius = (i % 2 === 0 ? 13 : 3.5) * pulse;
+    const angle = (i * Math.PI) / 4;
+    ctx.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function overSparkle(px, py) {
+  return roomObject && Math.hypot(px - roomObject.x, py - roomObject.y) <= SPARKLE_RADIUS;
+}
+
+let hoveredDoor = null;
+let hoveredSparkle = false;
+let pendingTarget = null; // what we're walking toward: { door } or { sparkle: true }
+let locked = false;       // true while a door or object is being handled
+let onDoor = async () => {};
+let onObject = async () => {};
+
+function draw(time) {
   ctx.drawImage(painting, 0, 0, ROOM_WIDTH, ROOM_HEIGHT);
   if (hoveredDoor) drawGlow(hoveredDoor);
+  if (roomObject) drawSparkle(time);
   drawCharacter(characterX);
-  if (hoveredDoor) drawLabel(hoveredDoor);
+  if (hoveredDoor) drawLabel(hoveredDoor.label, hoveredDoor.x, hoveredDoor.baseY - hoveredDoor.height - 34);
+  if (hoveredSparkle) drawLabel(roomObject.name, roomObject.x, roomObject.y - 46);
 }
 
 async function arrive() {
-  const door = pendingDoor;
-  pendingDoor = null;
-  if (!door) return;
+  const target = pendingTarget;
+  pendingTarget = null;
+  if (!target) return;
   locked = true;
   try {
-    await onDoor(door.id);
+    if (target.door) await onDoor(target.door.id);
+    else await onObject();
   } finally {
     locked = false;
   }
 }
 
+// One loop runs for the life of the page: it walks the character, redraws
+// (the sparkle twinkles), and notices when we've arrived somewhere.
 function frame(time) {
-  const dt = lastTime === null ? 0 : (time - lastTime) / 1000;
+  const dt = lastTime === null ? 0 : Math.min(0.1, (time - lastTime) / 1000);
   lastTime = time;
 
-  const distance = targetX - characterX;
-  const step = WALK_SPEED * dt;
-  characterX = Math.abs(distance) <= step ? targetX : characterX + Math.sign(distance) * step;
-  draw();
-
-  if (characterX !== targetX) {
-    requestAnimationFrame(frame);
-  } else {
-    running = false;
-    lastTime = null;
-    arrive();
+  if (painting) {
+    const distance = targetX - characterX;
+    const step = WALK_SPEED * dt;
+    characterX = Math.abs(distance) <= step ? targetX : characterX + Math.sign(distance) * step;
+    if (characterX === targetX && pendingTarget && !locked) arrive();
+    draw(time);
   }
-}
-
-function startWalking() {
-  if (running) return;
-  running = true;
   requestAnimationFrame(frame);
 }
+requestAnimationFrame(frame);
 
 // On-screen pixels -> painting coordinates.
 function paintingPoint(event) {
@@ -197,27 +251,29 @@ function paintingPoint(event) {
 canvas.addEventListener("click", (event) => {
   if (!painting || locked) return;
   const point = paintingPoint(event);
-  pendingDoor = doorAt(point.x, point.y) || null;
-  const destination = pendingDoor ? pendingDoor.x : point.x;
+  let destination = point.x;
+  if (overSparkle(point.x, point.y)) {
+    pendingTarget = { sparkle: true };
+    destination = roomObject.x;
+  } else {
+    const door = doorAt(point.x, point.y);
+    pendingTarget = door ? { door } : null;
+    if (door) destination = door.x;
+  }
   targetX = Math.max(40, Math.min(ROOM_WIDTH - 40, destination));
-  if (characterX === targetX) arrive();
-  else startWalking();
 });
 
 canvas.addEventListener("mousemove", (event) => {
   if (!painting) return;
   const point = paintingPoint(event);
-  const door = doorAt(point.x, point.y) || null;
-  canvas.style.cursor = door ? "pointer" : "default";
-  if (door !== hoveredDoor) {
-    hoveredDoor = door;
-    if (!running) draw();
-  }
+  hoveredSparkle = Boolean(overSparkle(point.x, point.y));
+  hoveredDoor = hoveredSparkle ? null : doorAt(point.x, point.y) || null;
+  canvas.style.cursor = hoveredSparkle || hoveredDoor ? "pointer" : "default";
 });
 
 canvas.addEventListener("mouseleave", () => {
   hoveredDoor = null;
-  if (painting && !running) draw();
+  hoveredSparkle = false;
 });
 
 // `handler(doorId)` is called when the character reaches a door.
@@ -225,14 +281,23 @@ export function setDoorHandler(handler) {
   onDoor = handler;
 }
 
-// Show a room. `base64` may be null if its painting never finished.
-export function showRoomImage(base64) {
+// `handler()` is called when the character reaches the sparkle.
+export function setObjectHandler(handler) {
+  onObject = handler;
+}
+
+// Show a room. `base64` may be null if its painting never finished. With
+// `keepPosition`, swap the picture without moving the character (used when
+// the version with painted doors replaces the first scene).
+export function showRoomImage(base64, { keepPosition = false } = {}) {
   return new Promise((resolve) => {
     const finish = (img) => {
       painting = img;
-      characterX = targetX = ROOM_WIDTH / 2;
-      pendingDoor = hoveredDoor = null;
-      draw();
+      if (!keepPosition) {
+        characterX = targetX = ROOM_WIDTH / 2;
+        pendingTarget = hoveredDoor = null;
+        hoveredSparkle = false;
+      }
       resolve();
     };
     if (!base64) {

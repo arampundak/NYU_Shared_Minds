@@ -2,7 +2,7 @@
 
 import { db } from "./firebase.js";
 import {
-  collection, addDoc, getDocs, doc, setDoc, getDoc, updateDoc, increment, serverTimestamp,
+  collection, addDoc, getDocs, query, where, doc, setDoc, getDoc, updateDoc, increment, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 const PLAYER_KEY = "doors-player";
@@ -11,9 +11,9 @@ const PLAYER_KEY = "doors-player";
 export function getPlayer() {
   try {
     const saved = JSON.parse(localStorage.getItem(PLAYER_KEY));
-    if (saved && saved.id) return saved;
+    if (saved && saved.id) return { found: [], questObjectId: null, ...saved };
   } catch {}
-  const player = { id: crypto.randomUUID(), name: "" };
+  const player = { id: crypto.randomUUID(), name: "", found: [], questObjectId: null };
   savePlayer(player);
   return player;
 }
@@ -49,4 +49,25 @@ export async function loadRoomImage(roomId) {
 
 export async function incrementVisits(roomId) {
   await updateDoc(doc(db, "rooms", roomId), { visits: increment(1) });
+}
+
+// The ids of the rooms this player wrote.
+export async function loadOwnRoomIds(playerId) {
+  const snapshot = await getDocs(query(collection(db, "rooms"), where("authorId", "==", playerId)));
+  return new Set(snapshot.docs.map((d) => d.id));
+}
+
+// Mirror the player's quest progress into Firestore. Called only when the
+// quest or the found list changes, never per frame.
+export async function savePlayerDoc(player) {
+  await setDoc(
+    doc(db, "players", player.id),
+    {
+      name: player.name,
+      found: player.found,
+      questObjectId: player.questObjectId,
+      lastSeen: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }

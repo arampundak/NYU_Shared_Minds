@@ -82,7 +82,7 @@ Player identity: a random id plus name saved in `localStorage`. No auth.
 
 - **Similarity:** cosine similarity, brute-force in the browser over all rooms (fine for a few hundred).
 - **Near door:** highest cosine, excluding the current room.
-- **Compass door:** embed the typed word(s); target = normalize(currentVec + 0.6 × wordVec); go to the nearest room to the target, excluding the current one.
+- **Compass door:** embed the typed word(s); target = normalize(currentVec + 1.5 × wordVec), with all vectors centered first (subtract the mean of all rooms; 0.6 on raw vectors never left the near door's neighbour); go to the nearest room to the target, excluding the current one.
 - **Bridge door (simple version):** among the bottom 30% by cosine to the current room, pick the one with the most `visits`.
 - **Object placement (meaning-based):** when a room is created, compare its embedding to every *unplaced* object; if the best cosine is above a threshold (tune, start about 0.2 for CLIP text), set `room.objectId` and `object.placedInRoomId`. The object is drawn as a code-made sparkle at a random x on the floor strip, plus its name on hover.
 - **Quest:** a random placed object the player hasn't found and that isn't in their own room. Show only the object's name, never its location. Objects stay put, so everyone can find each one.

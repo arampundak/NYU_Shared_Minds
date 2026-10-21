@@ -1,8 +1,11 @@
 // doors.js — which room does each door lead to? Pure logic, no page access.
 
-import { embedText, nearest, steer } from "./embed.js";
+import { embedText, nearest, steer, meanVector, centered } from "./embed.js";
 
-const COMPASS_STRENGTH = 0.6;
+// The spec started at 0.6, but on these embeddings that never leaves the near
+// door's neighbour. Measured on real rooms, 1.5 on centered vectors lands on
+// the room a phrase describes while single words still go to varied places.
+const COMPASS_STRENGTH = 1.5;
 const BRIDGE_FARTHEST_SHARE = 0.3;
 
 // Near door: the room with the highest cosine similarity.
@@ -23,10 +26,14 @@ export function bridgeDoor(current, rooms) {
   return popular[Math.floor(Math.random() * popular.length)];
 }
 
-// Compass door: the room nearest to (this room + a word you type).
+// Compass door: the room nearest to (this room + a word you typed), measured
+// on centered vectors (see meanVector).
 export async function compassDoor(current, words, rooms) {
-  const wordVector = await embedText(words);
-  const target = steer(current.embedding, wordVector, COMPASS_STRENGTH);
-  const [best] = nearest(target, rooms, 1, current.id);
-  return best ? best.room : null;
+  const mean = meanVector(rooms.map((room) => room.embedding));
+  const wordVector = centered(await embedText(words), mean);
+  const target = steer(centered(current.embedding, mean), wordVector, COMPASS_STRENGTH);
+  const centeredRooms = rooms.map((room) => ({ ...room, embedding: centered(room.embedding, mean) }));
+  const [best] = nearest(target, centeredRooms, 1, current.id);
+  if (!best) return null;
+  return rooms.find((room) => room.id === best.room.id);
 }

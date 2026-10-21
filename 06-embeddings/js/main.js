@@ -2,11 +2,15 @@
 // rooms by cosine similarity, paint the room, then walk in it and go through
 // its doors to other rooms.
 
-import { embedText, nearest } from "./embed.js";
+import { nearest } from "./embed.js";
+import { createRoom } from "./pipeline.js";
 import { nearDoor, bridgeDoor, compassDoor } from "./doors.js";
-import { getPlayer, savePlayer, saveRoom, loadRooms, saveRoomImage, loadRoomImage, incrementVisits } from "./rooms.js";
-import { paintRoom } from "./paint.js";
-import { showRoomImage, setDoorHandler } from "./roomview.js";
+import { getPlayer, savePlayer, loadRooms, loadRoomImage, incrementVisits,
+  loadOwnRoomIds, savePlayerDoc } from "./rooms.js";
+import { showRoomImage, setDoorHandler, setObjectHandler, setRoomObject } from "./roomview.js";
+import { loadObjects, seedObjects } from "./objects.js";
+import { pickQuest } from "./quest.js";
+import { celebrate } from "./celebration.js";
 import { verifyModels } from "./modelcheck.js";
 
 const form = document.getElementById("thought-form");
@@ -18,6 +22,10 @@ const resultsEl = document.getElementById("results");
 const roomSection = document.getElementById("room");
 const compassForm = document.getElementById("compass-form");
 const compassInput = document.getElementById("compass-words");
+const questText = document.getElementById("quest-text");
+const questScore = document.getElementById("quest-score");
+const seedButton = document.getElementById("seed");
+const seedStatus = document.getElementById("seed-status");
 const verifyButton = document.getElementById("verify");
 const verifyList = document.getElementById("verify-list");
 
@@ -51,16 +59,65 @@ function showNeighbours(neighbours) {
 }
 
 let currentRoom = null;
+let objectHere = null; // the hidden object in the current room, if you haven't found it
+
+function saveProgress() {
+  savePlayer(player);
+  savePlayerDoc(player).catch((error) => console.warn("couldn't save progress", error));
+}
+
+function showQuest(objects) {
+  const quest = objects.find((object) => object.id === player.questObjectId);
+  questText.textContent = quest
+    ? `Quest: find the ${quest.name}`
+    : "No quest yet. Objects turn up as more rooms are written.";
+  const names = player.found.map((id) => id.replace(/-/g, " "));
+  questScore.textContent = `Found ${player.found.length}${names.length ? `: ${names.join(", ")}` : ""}`;
+}
+
+// Keep the current quest if it's still open, otherwise pick a new one.
+async function ensureQuest(objects) {
+  const open = objects.find(
+    (object) => object.id === player.questObjectId && object.placedInRoomId && !player.found.includes(object.id)
+  );
+  if (!open) {
+    const next = pickQuest(player, objects, await loadOwnRoomIds(player.id));
+    player.questObjectId = next ? next.id : null;
+    saveProgress();
+  }
+  showQuest(objects);
+  return objects.find((object) => object.id === player.questObjectId) || null;
+}
 
 // Walk into a room: show its painting, count the visit, say whose thought it is.
 async function enterRoom(room) {
   currentRoom = room;
   compassForm.hidden = true;
-  showRoomImage(await loadRoomImage(room.id));
+  const [image, objects] = await Promise.all([loadRoomImage(room.id), loadObjects()]);
+  await showRoomImage(image);
+  objectHere = objects.find((o) => o.placedInRoomId === room.id && !player.found.includes(o.id)) || null;
+  setRoomObject(room.id, objectHere);
   roomSection.hidden = false;
   statusEl.textContent = `"${room.text}" — ${room.authorName}${room.isBot ? " (bot)" : ""}. Click the floor to walk, or click a door.`;
   incrementVisits(room.id).catch((error) => console.warn("couldn't count the visit", error));
+  await ensureQuest(objects);
 }
+
+setObjectHandler(async () => {
+  if (!objectHere) return;
+  if (objectHere.id !== player.questObjectId) {
+    statusEl.textContent = `A ${objectHere.name}. Not what you're looking for.`;
+    return;
+  }
+  const found = objectHere;
+  player.found.push(found.id);
+  statusEl.textContent = `You found the ${found.name}!`;
+  objectHere = null;
+  setRoomObject(null, null);
+  player.questObjectId = null;
+  const next = await ensureQuest(await loadObjects());
+  celebrate({ objectName: found.name, score: player.found.length, nextQuest: next ? next.name : null });
+});
 
 async function goThrough(target, noRoomMessage) {
   if (!target) {
@@ -118,40 +175,50 @@ form.addEventListener("submit", async (event) => {
   submitButton.disabled = true;
 
   try {
-    statusEl.textContent = "Embedding your thought...";
-    const embedding = await embedText(text);
-
-    // Look at the existing rooms before saving, so you never match yourself.
-    statusEl.textContent = "Finding your place among the other rooms...";
-    const rooms = await loadRooms();
-    const neighbours = nearest(embedding, rooms, 5);
-
-    const roomId = await saveRoom({ text, embedding, authorName: name, authorId: player.id });
-    showNeighbours(neighbours);
-    thoughtInput.value = "";
-
-    const thisRoom = { id: roomId, text, embedding, authorName: name, isBot: false };
-
-    // Walk in as soon as the scene is painted; the door pass finishes behind it.
-    let entered = Promise.resolve();
-    const base64 = await paintRoom(
-      text,
-      (message) => { statusEl.textContent = message; },
-      (sceneBase64) => {
-        entered = saveRoomImage(roomId, sceneBase64).then(() => enterRoom(thisRoom));
-        entered.catch((error) => console.error(error));
+    let neighbours = [];
+    let roomId = null;
+    const { base64 } = await createRoom(
+      { text, authorName: name, authorId: player.id },
+      {
+        onStatus: (message) => { statusEl.textContent = message; },
+        // Look at the existing rooms before saving, so you never match yourself.
+        onEmbedded: async (embedding) => {
+          statusEl.textContent = "Finding your place among the other rooms...";
+          neighbours = nearest(embedding, await loadRooms(), 5);
+        },
+        onSaved: (id) => {
+          roomId = id;
+          showNeighbours(neighbours);
+          thoughtInput.value = "";
+        },
+        // Walk in as soon as the scene is painted; the door pass finishes behind it.
+        onSceneSaved: (id, embedding) =>
+          enterRoom({ id, text, embedding, authorName: name, isBot: false }),
       }
     );
-    await entered;
-    await saveRoomImage(roomId, base64);
     // Swap in the version with painted doors, unless you've already left.
-    if (currentRoom && currentRoom.id === roomId) await showRoomImage(base64);
+    if (currentRoom && currentRoom.id === roomId) await showRoomImage(base64, { keepPosition: true });
   } catch (error) {
     console.error(error);
     statusEl.textContent = `Something went wrong: ${error.message}`;
   } finally {
     submitButton.disabled = false;
   }
+});
+
+seedButton.addEventListener("click", async () => {
+  seedButton.disabled = true;
+  seedStatus.textContent = "Seeding...";
+  try {
+    const added = await seedObjects((done, total) => {
+      seedStatus.textContent = `Seeding ${done}/${total}...`;
+    });
+    seedStatus.textContent = added ? `Added ${added} objects.` : "All objects were already there.";
+  } catch (error) {
+    console.error(error);
+    seedStatus.textContent = `Failed: ${error.message}`;
+  }
+  seedButton.disabled = false;
 });
 
 verifyButton.addEventListener("click", async () => {
