@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Doors of Perception</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Doors of Perception</h1>
+  <p class="subtitle">Stage 3: walk through doors to rooms with similar, distant, or steered meaning.</p>
+
+  <form id="thought-form">
+    <label>Your name <input id="name" required maxlength="30"></label>
+    <label>One thought
+      <textarea id="thought" rows="3" maxlength="200" required
+        placeholder="a flooded library where the candles still burn"></textarea>
+    </label>
+    <button id="submit" type="submit">Write it</button>
+  </form>
+
+  <p id="status"></p>
+
+  <div id="room" hidden>
+    <canvas id="room-canvas"></canvas>
+    <form id="compass-form" hidden>
+      <label>Which way does the compass point? (e.g. old, locked, metal)
+        <input id="compass-words" maxlength="60" autocomplete="off">
+      </label>
+      <button type="submit">Go</button>
+    </form>
+  </div>
+  <div id="results"></div>
+
+  <hr>
+  <button id="verify" type="button">Verify the 4 models</button>
+  <ul id="verify-list"></ul>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
