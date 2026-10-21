@@ -1,11 +1,11 @@
-// roomview.js — draws a room painting on a canvas, with three code-drawn doors
-// and a placeholder character that walks along the floor strip when you click.
-// Clicking a door walks the character to it, then calls the door handler.
+// roomview.js — draws a room painting on a canvas, with a placeholder
+// character that walks along the floor strip when you click. The doors are
+// painted into the picture; here they are just clickable zones that glow on
+// hover. Clicking one walks the character to it, then calls the door handler.
 
 import { ROOM_WIDTH, ROOM_HEIGHT } from "./paint.js";
+import { FLOOR_TOP, DOORS, doorPath } from "./layout.js";
 
-// The floor is the bottom 38% of the painting.
-const FLOOR_TOP = ROOM_HEIGHT * 0.62;
 const FLOOR_MIDDLE = (FLOOR_TOP + ROOM_HEIGHT) / 2;
 const WALK_SPEED = 180; // pixels per second, in painting coordinates
 
@@ -80,43 +80,38 @@ function drawCharacter(x) {
   ctx.stroke();
 }
 
-// Doors are drawn on top of the painting: left edge, right edge, back center.
-// The back door is smaller, as if further away.
-const DOORS = [
-  { id: "near", label: "Near: a room like this one", x: 62, width: 72, height: 124, baseY: FLOOR_TOP + 22 },
-  { id: "bridge", label: "Bridge: somewhere far away", x: ROOM_WIDTH - 62, width: 72, height: 124, baseY: FLOOR_TOP + 22 },
-  { id: "compass", label: "Compass: steer with a word", x: ROOM_WIDTH / 2, width: 46, height: 76, baseY: FLOOR_TOP + 2 },
-];
-
-function drawDoor(door, hovered) {
-  const left = door.x - door.width / 2;
-  const top = door.baseY - door.height;
-  const archRadius = door.width / 2;
-
+// A plain wooden door, only used on the blank stand-in for rooms whose
+// painting never finished. Painted rooms have their doors in the picture.
+function drawDoor(ctx, door) {
   ctx.lineWidth = 3;
   ctx.lineJoin = "round";
   ctx.strokeStyle = "#1a1208";
-
-  ctx.fillStyle = hovered ? "#c98a4b" : "#7a4a24";
-  ctx.beginPath();
-  ctx.moveTo(left, door.baseY);
-  ctx.lineTo(left, top + archRadius);
-  ctx.arc(door.x, top + archRadius, archRadius, Math.PI, 0);
-  ctx.lineTo(left + door.width, door.baseY);
-  ctx.closePath();
+  ctx.fillStyle = "#7a4a24";
+  doorPath(ctx, door);
   ctx.fill();
   ctx.stroke();
 
-  // planks and a knob
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(door.x, top);
+  ctx.moveTo(door.x, door.baseY - door.height);
   ctx.lineTo(door.x, door.baseY);
   ctx.stroke();
   ctx.fillStyle = "#f2c94c";
   ctx.beginPath();
   ctx.arc(door.x + door.width * 0.28, door.baseY - door.height * 0.42, 3.5, 0, Math.PI * 2);
   ctx.fill();
+}
+
+// A soft glow around the painted door you're pointing at.
+function drawGlow(door) {
+  ctx.save();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255, 236, 140, 0.95)";
+  ctx.shadowColor = "#ffe680";
+  ctx.shadowBlur = 14;
+  doorPath(ctx, door);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawLabel(door) {
@@ -132,9 +127,12 @@ function drawLabel(door) {
   ctx.fillText(door.label, x + 8, y + 17);
 }
 
+// Painted doors never land exactly on the marks, so be generous.
+const DOOR_CLICK_MARGIN = 12;
+
 function doorAt(px, py) {
   return DOORS.find((door) =>
-    Math.abs(px - door.x) <= door.width / 2 &&
+    Math.abs(px - door.x) <= door.width / 2 + DOOR_CLICK_MARGIN &&
     py <= door.baseY && py >= door.baseY - door.height - door.width / 2
   );
 }
@@ -146,7 +144,7 @@ let onDoor = async () => {};
 
 function draw() {
   ctx.drawImage(painting, 0, 0, ROOM_WIDTH, ROOM_HEIGHT);
-  for (const door of DOORS) drawDoor(door, door === hoveredDoor);
+  if (hoveredDoor) drawGlow(hoveredDoor);
   drawCharacter(characterX);
   if (hoveredDoor) drawLabel(hoveredDoor);
 }
@@ -246,6 +244,7 @@ export function showRoomImage(base64) {
       blankCtx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
       blankCtx.fillStyle = "#8d7b5a";
       blankCtx.fillRect(0, FLOOR_TOP, ROOM_WIDTH, ROOM_HEIGHT - FLOOR_TOP);
+      for (const door of DOORS) drawDoor(blankCtx, door);
       finish(blank);
       return;
     }

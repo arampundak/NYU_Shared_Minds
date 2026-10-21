@@ -130,13 +130,22 @@ form.addEventListener("submit", async (event) => {
     showNeighbours(neighbours);
     thoughtInput.value = "";
 
-    statusEl.textContent = "Painting your room... (usually 5-15 seconds)";
-    const base64 = await paintRoom(text, (attempt) => {
-      statusEl.textContent = `Painting failed, trying again (${attempt})...`;
-    });
-    await saveRoomImage(roomId, base64);
+    const thisRoom = { id: roomId, text, embedding, authorName: name, isBot: false };
 
-    await enterRoom({ id: roomId, text, embedding, authorName: name, isBot: false });
+    // Walk in as soon as the scene is painted; the door pass finishes behind it.
+    let entered = Promise.resolve();
+    const base64 = await paintRoom(
+      text,
+      (message) => { statusEl.textContent = message; },
+      (sceneBase64) => {
+        entered = saveRoomImage(roomId, sceneBase64).then(() => enterRoom(thisRoom));
+        entered.catch((error) => console.error(error));
+      }
+    );
+    await entered;
+    await saveRoomImage(roomId, base64);
+    // Swap in the version with painted doors, unless you've already left.
+    if (currentRoom && currentRoom.id === roomId) await showRoomImage(base64);
   } catch (error) {
     console.error(error);
     statusEl.textContent = `Something went wrong: ${error.message}`;
