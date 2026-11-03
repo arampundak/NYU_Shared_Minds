@@ -8,6 +8,20 @@
     html, body { margin: 0; height: 100%; background: #07080c; overflow: hidden; font-family: ui-monospace, Menlo, monospace; }
     canvas { display: block; }
     #status { position: fixed; left: 12px; bottom: 10px; color: #8a93a6; font-size: 12px; }
+    #cam { position: fixed; left: 12px; bottom: 34px; width: 240px; height: 180px; border: 1px solid #2a3350; border-radius: 6px; overflow: hidden; background: #000; }
+    #cam video, #cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #cam video { transform: scaleX(-1); }
+    #hud { position: fixed; left: 12px; top: 12px; color: #c8d0e0; font-size: 12px; pointer-events: none; }
+    .hud-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .hud-name { width: 100px; }
+    .hud-bar { position: relative; width: 140px; height: 6px; background: #1a2036; border-radius: 3px; }
+    .hud-bar i { position: absolute; top: -3px; width: 4px; height: 12px; margin-left: -2px; background: #30f0ff; border-radius: 2px; }
+    .clamped .hud-bar { background: #5a1420; }
+    .clamped .hud-bar i, .clamped .hud-name { background-color: #ff3050; color: #ff3050; }
+    .clamped .hud-name { background: none; }
+    #hud-msg { margin: 10px 0; color: #ffb020; font-size: 14px; min-height: 18px; }
+    #hud-rates { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); color: #8a93a6; }
+    #hud-copy { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); color: #5b6785; white-space: nowrap; }
   </style>
   <script type="importmap">
   {
@@ -23,6 +37,8 @@
 </head>
 <body>
   <div id="status">loading URDF…</div>
+  <div id="cam"><video id="video" playsinline muted></video><canvas id="overlay" width="640" height="480"></canvas></div>
+  <script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

@@ -6,6 +6,8 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import GUI from "lil-gui";
 import { loadRobot } from "./robot.js";
+import { createPose } from "./pose.js";
+import { createHud } from "./hud.js";
 
 const BASE_DISTANCE = 0.9; // metres between bases; tuned so blades only meet in the middle
 
@@ -47,6 +49,7 @@ const PLAYERS = [
 
 const gui = new GUI({ title: "joints" });
 const robots = [];
+const sliders = []; // per-robot angle objects the lil-gui sliders write into
 
 for (const p of PLAYERS) {
   const robot = await loadRobot(p);
@@ -60,13 +63,31 @@ for (const p of PLAYERS) {
   for (const name of robot.jointNames) {
     const { lower, upper } = robot.limits[name];
     angles[name] = 0;
-    folder.add(angles, name, lower, upper, 0.01).onChange(() => robot.setJoints(angles));
+    folder.add(angles, name, lower, upper, 0.01).listen().onChange(() => robot.setJoints(angles));
   }
   robot.setJoints(angles);
+  sliders.push(angles);
 }
 
-document.getElementById("status").textContent =
-  "joints: " + robots[0].jointNames.join(", ");
+const me = robots[0];
+const current = { ...sliders[0] };       // what the control loop has actually reached
+const MAX_VELOCITY = 8;                  // rad/s: gives the arm weight
+const control = { camera: true };
+gui.add(control, "camera").name("camera drives you");
+const hand = { hand: "right" };
+gui.add(hand, "hand", ["right", "left"]).name("sword arm").onChange((h) => (pose.hand = h));
+
+const hud = createHud({ jointNames: me.jointNames, limits: me.limits });
+document.getElementById("status").remove();
+
+const pose = createPose({
+  video: document.getElementById("video"),
+  overlay: document.getElementById("overlay"),
+  limits: me.limits,
+});
+let cameraError = null;
+pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
+addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "c") pose.recalibrate(); });
 
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
@@ -75,7 +96,38 @@ addEventListener("resize", () => {
   composer.setSize(innerWidth, innerHeight);
 });
 
-renderer.setAnimationLoop(() => {
+const MESSAGES = {
+  starting: "starting camera and model…",
+  waiting: "step back ~2 m so your arms and hips are in view",
+  calibrating: () => `hold a neutral pose, arms at your sides… ${Math.max(1, Math.ceil(3 - pose.calProgress * 3))}`,
+  tracking: null,
+};
+
+let last = performance.now(), frames = 0, rateT = last, controlHz = 60, clamped = new Set();
+renderer.setAnimationLoop((now) => {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (now - rateT >= 1000) { controlHz = (frames * 1000) / (now - rateT); frames = 0; rateT = now; }
+  frames++;
+
+  if (control.camera && pose.state === "tracking") {
+    for (const [name, target] of Object.entries(pose.targets)) {
+      const step = MAX_VELOCITY * dt;
+      current[name] += Math.max(-step, Math.min(step, target - current[name]));
+    }
+    Object.assign(sliders[0], current);
+    me.setJoints(current);
+    clamped = pose.clamped;
+  } else {
+    Object.assign(current, sliders[0]);
+    clamped = new Set();
+  }
+
+  const m = cameraError ? `camera unavailable (${cameraError}) — use the sliders` : MESSAGES[pose.state];
+  hud.update({
+    angles: current, clamped, perceptionHz: pose.hz, controlHz,
+    message: typeof m === "function" ? m() : m,
+  });
   controls.update();
   composer.render();
 });
