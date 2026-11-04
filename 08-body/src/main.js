@@ -8,6 +8,9 @@ import GUI from "lil-gui";
 import { loadRobot } from "./robot.js";
 import { createPose, K } from "./pose.js";
 import { createHud } from "./hud.js";
+import { createFx } from "./fx.js";
+import { createGame } from "./game.js";
+import { dummyAngles } from "./dummy.js";
 
 const BASE_DISTANCE = 0.9; // metres between bases; tuned so blades only meet in the middle
 
@@ -21,9 +24,9 @@ scene.background = new THREE.Color(0x07080c);
 scene.fog = new THREE.Fog(0x07080c, 3, 8);
 
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 50);
-camera.position.set(0, 0.7, -BASE_DISTANCE / 2 - 0.9);
+camera.position.set(0, 0.85, -BASE_DISTANCE / 2 - 0.95); // behind and above your own robot
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.2, 0);
+controls.target.set(0, 0.22, 0.15);
 controls.update();
 
 scene.add(new THREE.HemisphereLight(0xaab4ff, 0x10121a, 1.2));
@@ -94,7 +97,6 @@ const pose = createPose({
   overlay: document.getElementById("overlay"),
   limits: me.limits,
 });
-window.duel = { me, sliders, pose };
 let cameraError = null;
 pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
 addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "c") pose.recalibrate(); });
@@ -106,31 +108,65 @@ addEventListener("resize", () => {
   composer.setSize(innerWidth, innerHeight);
 });
 
-let last = performance.now(), frames = 0, rateT = last, controlHz = 60, clamped = new Set();
-renderer.setAnimationLoop((now) => {
-  const dt = Math.min((now - last) / 1000, 0.1);
-  last = now;
-  if (now - rateT >= 1000) { controlHz = (frames * 1000) / (now - rateT); frames = 0; rateT = now; }
-  frames++;
+const fx = createFx(scene);
+// solo mode: a scripted dummy plays the opponent and this client judges both robots
+const solo = true;
+const game = createGame({ robots, fx, judge: solo ? [0, 1] : [0] });
+const OPPONENT = solo ? "DUMMY" : "OPP";
 
+addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (game.state === "idle" || game.state === "over")) game.start();
+});
+
+let last = performance.now(), frames = 0, rateT = last, controlHz = 60, clamped = new Set(), clock = 0, autoStarted = false;
+
+function tick(dt) {
+  clock += dt;
   if (control.camera && pose.state === "tracking") {
+    if (!autoStarted && game.state === "idle") { autoStarted = true; game.start(); }
     for (const [name, target] of Object.entries(pose.targets)) {
       if (!Number.isFinite(target)) continue;
       const step = MAX_VELOCITY * dt;
       current[name] += Math.max(-step, Math.min(step, target - current[name]));
     }
     Object.assign(sliders[0], current);
-    me.setJoints(current);
     clamped = pose.clamped;
   } else {
     Object.assign(current, sliders[0]);
     clamped = new Set();
   }
 
+  // robots get the commanded pose plus any clash/hit recoil
+  const withRecoil = (base, i, side) => {
+    const r = game.recoilOffset(i, side);
+    return Object.fromEntries(Object.entries(base).map(([k, v]) => [k, v + (r[k] ?? 0)]));
+  };
+  me.setJoints(withRecoil(current, 0, -1));
+  if (solo) {
+    const d = dummyAngles(clock);
+    Object.assign(sliders[1], d);
+    robots[1].setJoints(withRecoil(d, 1, 1));
+  }
+
+  game.update(dt);
+  fx.update(dt);
+}
+
+window.duel = { me, robots, sliders, pose, game, tick };
+
+renderer.setAnimationLoop((now) => {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (now - rateT >= 1000) { controlHz = (frames * 1000) / (now - rateT); frames = 0; rateT = now; }
+  frames++;
+
+  tick(dt);
+
   hud.update({
     angles: current, clamped, perceptionHz: pose.hz, handHz: pose.handHz, controlHz,
     message: cameraError ? `camera unavailable (${cameraError}) — use the sliders` : pose.status,
   });
+  hud.setGame({ scores: game.scores, time: game.time, banner: game.banner, opponent: OPPONENT });
   controls.update();
   composer.render();
 });

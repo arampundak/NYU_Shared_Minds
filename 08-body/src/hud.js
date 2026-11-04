@@ -6,6 +6,8 @@ export function createHud({ jointNames, limits }) {
   const root = document.createElement("div");
   root.id = "hud";
   root.innerHTML = `
+    <div id="hud-score"></div>
+    <div id="hud-banner"></div>
     <div id="hud-joints"></div>
     <div id="hud-msg"></div>
     <div id="hud-rates"></div>
@@ -21,6 +23,8 @@ export function createHud({ jointNames, limits }) {
     jointsEl.appendChild(row);
     rows[name] = row;
   }
+  const scoreEl = root.querySelector("#hud-score");
+  const bannerEl = root.querySelector("#hud-banner");
   const msg = root.querySelector("#hud-msg");
   const rates = root.querySelector("#hud-rates");
 
@@ -29,6 +33,11 @@ export function createHud({ jointNames, limits }) {
   });
 
   return {
+    setGame({ scores, time, banner, opponent }) {
+      const t = Math.ceil(time);
+      scoreEl.innerHTML = `<b class="me">YOU ${scores[0]}</b><span>${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</span><b class="opp">${scores[1]} ${opponent}</b>`;
+      bannerEl.textContent = banner;
+    },
     update({ angles, clamped, perceptionHz, handHz, controlHz, message }) {
       for (const name of Object.keys(rows)) {
         const { lower, upper } = limits[name];

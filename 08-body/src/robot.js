@@ -5,6 +5,14 @@ const URDF_URL = "assets/so100/so100.urdf";
 const BLADE_LENGTH = 0.25;
 const BLADE_RADIUS = 0.006;
 
+// each robot link as a 3D line segment between joint origins; upper links are worth more
+const LINK_SEGMENTS = [
+  { name: "base", from: "base", to: "upper_arm", weight: 1, radius: 0.05 },
+  { name: "upper_arm", from: "upper_arm", to: "lower_arm", weight: 2, radius: 0.035 },
+  { name: "forearm", from: "lower_arm", to: "wrist", weight: 2, radius: 0.035 },
+  { name: "hand", from: "wrist", to: "gripper", weight: 2, radius: 0.035 },
+];
+
 // joint names and limits come from the URDF, never hardcoded
 export async function loadRobot({ color, blade }) {
   const loader = new URDFLoader();
@@ -30,10 +38,29 @@ export async function loadRobot({ color, blade }) {
   const bladeMesh = makeBlade(blade);
   urdf.links.gripper.add(bladeMesh);
 
+  const worldPos = (link) => urdf.links[link].getWorldPosition(new THREE.Vector3());
+
   return {
     root,
     urdf,
     limits,
+    materials,
+    color,
+    bladeColor: blade,
+    // world-space segments; call after joints are set (updates matrices itself)
+    segments() {
+      root.updateMatrixWorld(true);
+      return LINK_SEGMENTS.map((l) => ({ ...l, a: worldPos(l.from), b: worldPos(l.to) }));
+    },
+    bladeSegment() {
+      root.updateMatrixWorld(true);
+      const h = BLADE_LENGTH / 2;
+      return {
+        a: bladeMesh.localToWorld(new THREE.Vector3(0, h, 0)),   // hilt end
+        b: bladeMesh.localToWorld(new THREE.Vector3(0, -h, 0)),  // tip
+        radius: BLADE_RADIUS * 1.5,
+      };
+    },
     jointNames: joints.map((j) => j.name),
     blade: bladeMesh,
     // clamps to URDF limits; returns names of joints that hit a limit
