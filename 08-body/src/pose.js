@@ -9,7 +9,7 @@ const CAL_SECONDS = 3;
 // shoulder_lift 0 = upper arm straight back, ~1.57 = straight up, ~3 = straight forward.
 // elbow_flex -PI = straight arm, 0 = fully folded.
 const K = {
-  panShift: 1.6,   // rad per shoulder-width of hip shift
+  panShift: 1.6,   // rad per shoulder-width of shoulder-center shift
   panTilt: 2.0,    // rad per rad of shoulder-line tilt
   liftHang: 3.5,   // arm hanging  -> SO-100 reaches forward-low (it cannot hang)
   liftUp: 1.57,    // arm overhead -> SO-100 points straight up
@@ -19,20 +19,9 @@ const K = {
 
 const REQUIRED = ["left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"];
 
-// laptop cameras often cannot see the hips: estimate them below the shoulders when missing
-export function withHips(kp) {
-  if (kp.left_hip && kp.right_hip) return kp;
-  const sw = len(sub(kp.right_shoulder, kp.left_shoulder));
-  const drop = 1.4 * sw;
-  return {
-    ...kp,
-    left_hip: kp.left_hip ?? { x: kp.left_shoulder.x, y: kp.left_shoulder.y + drop },
-    right_hip: kp.right_hip ?? { x: kp.right_shoulder.x, y: kp.right_shoulder.y + drop },
-  };
-}
-
+// upper body only: works seated, and laptop cameras rarely see hips reliably
 export const BONES = [
-  ["left_shoulder", "right_shoulder"], ["left_shoulder", "left_hip"], ["right_shoulder", "right_hip"], ["left_hip", "right_hip"],
+  ["left_shoulder", "right_shoulder"],
   ["left_shoulder", "left_elbow"], ["left_elbow", "left_wrist"], ["right_shoulder", "right_elbow"], ["right_elbow", "right_wrist"],
 ];
 
@@ -48,7 +37,7 @@ export function measure(kp) {
   const shoulderC = mid(kp.left_shoulder, kp.right_shoulder);
   return {
     shoulderWidth: len(sub(kp.right_shoulder, kp.left_shoulder)),
-    hipX: mid(kp.left_hip, kp.right_hip).x,
+    centerX: shoulderC.x,
     tilt: Math.atan2(kp.right_shoulder.y - kp.left_shoulder.y, kp.right_shoulder.x - kp.left_shoulder.x),
     wristY: (kp.left_wrist.y + kp.right_wrist.y) / 2,
   };
@@ -59,16 +48,17 @@ export function retarget(kp, cal, hand = "right") {
   const other = hand === "right" ? "left" : "right";
   const s = kp[`${hand}_shoulder`], e = kp[`${hand}_elbow`], w = kp[`${hand}_wrist`];
   const shoulderC = mid(kp.left_shoulder, kp.right_shoulder);
-  const hipC = mid(kp.left_hip, kp.right_hip);
-  const torsoDown = unit(sub(hipC, shoulderC));
+  const tilt = measure(kp).tilt - cal.tilt;
+  // "down the torso" is perpendicular to the shoulder line, so leaning does not change arm angles
+  const lineTilt = Math.atan2(kp.right_shoulder.y - kp.left_shoulder.y, kp.right_shoulder.x - kp.left_shoulder.x);
+  const torsoDown = { x: -Math.sin(lineTilt), y: Math.cos(lineTilt) };
   const upper = sub(e, s), fore = sub(w, e);
   const sw = cal.shoulderWidth;
 
   const lift = angleBetween(upper, torsoDown);            // 0 hanging .. PI overhead
   const elbow = angleBetween(sub(s, e), fore);            // PI straight .. 0 folded
   const foreFromDown = angleBetween(fore, torsoDown);     // 0 pointing down .. PI up
-  const tilt = measure(kp).tilt - cal.tilt;
-  const shift = (hipC.x - cal.hipX) / sw;
+  const shift = (shoulderC.x - cal.centerX) / sw;
   const rollRaw = (cal.wristY - kp[`${other}_wrist`].y) / (2 * sw); // other hand raised above its neutral height
 
   return {
@@ -142,9 +132,8 @@ export function createPose({ video, overlay, limits }) {
     drawOverlay(results[0]?.keypoints);
     if (pose.missing.length) return;
 
-    const kp = withHips(lastGood);
-    if (pose.state === "waiting" || pose.state === "calibrating") calibrate(now, kp);
-    else track(now / 1000, kp);
+    if (pose.state === "waiting" || pose.state === "calibrating") calibrate(now, lastGood);
+    else track(now / 1000, lastGood);
   }
 
   function calibrate(now, kp) {
@@ -153,7 +142,7 @@ export function createPose({ video, overlay, limits }) {
     pose.calProgress = (now - calStart) / (CAL_SECONDS * 1000);
     if (pose.calProgress < 1) return;
     const avg = (key) => samples.reduce((a, s) => a + s[key], 0) / samples.length;
-    pose.cal = { shoulderWidth: avg("shoulderWidth"), hipX: avg("hipX"), tilt: avg("tilt"), wristY: avg("wristY") };
+    pose.cal = { shoulderWidth: avg("shoulderWidth"), centerX: avg("centerX"), tilt: avg("tilt"), wristY: avg("wristY") };
     pose.state = "tracking";
   }
 

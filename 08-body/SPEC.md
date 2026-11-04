@@ -36,7 +36,7 @@ assets/so100/    // URDF + simplified meshes (GLB preferred)
 Use the player's sword arm (default right, with a left-handed toggle). Mirror the webcam.
 | joint | source |
 |---|---|
-| shoulder_pan | hip-center x offset + shoulder-line tilt (lean/shift the body) |
+| shoulder_pan | shoulder-center x offset + shoulder-line tilt (lean/shift the body; no hips, so it works seated) |
 | shoulder_lift | upper-arm angle vs torso (arm overhead = raised) |
 | elbow_flex | elbow angle |
 | wrist_flex | forearm angle relative to the upper arm, scaled |
