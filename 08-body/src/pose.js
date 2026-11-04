@@ -86,7 +86,7 @@ export function retarget(kp, cal, hand = "right") {
     shoulder_pan: -(K.panArm * armDx + K.panShift * shift + K.panTilt * tilt), // robot +pan is toward screen-left
     shoulder_lift,
     elbow_flex,
-    wrist_flex: K.wrist * bend,
+    wrist_flex: -K.wrist * bend,                              // robot +wrist tips the blade forward; measured on the hand, outward bend maps to back
     wrist_roll: 0,                                            // optional per spec; off until the basics feel right
     gripper: 0,
   };
