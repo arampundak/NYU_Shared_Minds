@@ -22,7 +22,7 @@
       "$room": {
         ".read": "auth != null",
         "$uid": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && $uid.beginsWith(auth.uid)",
           ".validate": "newData.hasChildren(['s', 'j'])"
         }
       }

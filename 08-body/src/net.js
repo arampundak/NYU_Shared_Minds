@@ -50,20 +50,26 @@ async function loadFirebase() {
   return { db, database: db.getDatabase(app), uid: user.uid };
 }
 
-function firebaseTransport(room, hooks) {
-  let fb = null, mine = null;
+function firebaseTransport(room, hooks, tag) {
+  let fb = null, mine = null, key = null, snaps = 0, lastError = null, writes = 0;
   return {
     name: "firebase",
+    debug: () => ({ uid: fb?.uid, snaps, writes, lastError }),
     async start() {
       fb = await loadFirebase();
-      mine = fb.db.ref(fb.database, `duels/${room}/${fb.uid}`);
+      key = `${fb.uid}_${tag}`;           // user id + per-page tag: two tabs of one browser share a uid
+      mine = fb.db.ref(fb.database, `duels/${room}/${key}`);
       fb.db.onDisconnect(mine).remove();
       fb.db.onValue(fb.db.ref(fb.database, `duels/${room}`), (snap) => {
-        snap.forEach((child) => { if (child.key !== fb.uid) hooks.message(JSON.stringify(child.val()), child.key); });
+        snaps++;
+        snap.forEach((child) => { if (child.key !== key) hooks.message(JSON.stringify(child.val()), child.key); });
       });
     },
     peersListed: () => 0,
-    send(state) { if (mine) fb.db.set(mine, state); },
+    send(state) {
+      if (!mine) return;
+      fb.db.set(mine, state).then(() => writes++, (e) => { lastError = e.message; });
+    },
     close() { try { fb?.db.remove(mine); } catch { /* ignore */ } },
   };
 }
@@ -117,7 +123,7 @@ export function createNet({ room, jointNames, prefer = "p5live" }) {
   async function use(make) {
     tr?.close();
     frames = [];
-    tr = make(room, { message: receive });
+    tr = make(room, { message: receive }, tag);
     net.transport = tr.name;
     net.status = `connecting via ${tr.name}…`;
     await tr.start();
