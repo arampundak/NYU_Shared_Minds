@@ -6,7 +6,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import GUI from "lil-gui";
 import { loadRobot } from "./robot.js";
-import { createPose } from "./pose.js";
+import { createPose, K } from "./pose.js";
 import { createHud } from "./hud.js";
 
 const BASE_DISTANCE = 0.9; // metres between bases; tuned so blades only meet in the middle
@@ -76,6 +76,15 @@ const control = { camera: true };
 gui.add(control, "camera").name("camera drives you");
 const hand = { hand: "right" };
 gui.add(hand, "hand", ["right", "left"]).name("sword arm").onChange((h) => (pose.hand = h));
+
+const feel = gui.addFolder("feel (tune live)");
+feel.add(K, "minCutoff", 0.2, 4, 0.05).name("smoothing (low = smooth)");
+feel.add(K, "beta", 0, 0.5, 0.005).name("fast-move response");
+feel.add(K, "deadzone", 0, 0.15, 0.005).name("jitter dead zone");
+feel.add(K, "panArm", 0, 2, 0.05).name("pan: arm side swing");
+feel.add(K, "panShift", 0, 2, 0.05).name("pan: body shift");
+feel.add(K, "panTilt", 0, 3, 0.05).name("pan: lean");
+feel.add(K, "wrist", 0, 1.5, 0.05).name("wrist follows forearm");
 
 const hud = createHud({ jointNames: me.jointNames, limits: me.limits });
 document.getElementById("status").remove();

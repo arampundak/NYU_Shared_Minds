@@ -8,12 +8,17 @@ const HANDS_UP_SECONDS = 1.5; // hold both hands up to start; that pose also cal
 // retargeting constants, mapped from how the SO-100 actually moves:
 // shoulder_lift 0 = upper arm straight back, ~1.57 = straight up, ~3 = straight forward.
 // elbow_flex -PI = straight arm, 0 = fully folded.
-const K = {
-  panShift: 1.6,   // rad per shoulder-width of shoulder-center shift
-  panTilt: 2.0,    // rad per rad of shoulder-line tilt
+// exported so the lil-gui "feel" folder can tune them live
+export const K = {
+  panArm: 0.8,     // rad per shoulder-width of hand sideways swing (the main pan control)
+  panShift: 0.8,   // rad per shoulder-width of shoulder-center shift (body shift)
+  panTilt: 1.0,    // rad per rad of shoulder-line tilt (lean)
   liftHang: 3.5,   // arm hanging  -> SO-100 reaches forward-low (it cannot hang)
   liftUp: 1.57,    // arm overhead -> SO-100 points straight up
-  wrist: 0.5,
+  wrist: 0.8,      // blade tilt per radian of forearm swing relative to the upper arm
+  minCutoff: 0.8,  // filter: lower = smoother but laggier
+  beta: 0.05,      // filter: higher = less lag on fast moves
+  deadzone: 0.03,  // rad: ignore changes smaller than this (kills jitter)
 };
 
 const REQUIRED = ["left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"];
@@ -37,8 +42,14 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 export function measure(kp) {
   const shoulderC = mid(kp.left_shoulder, kp.right_shoulder);
+  const width = len(sub(kp.right_shoulder, kp.left_shoulder));
   return {
-    shoulderWidth: len(sub(kp.right_shoulder, kp.left_shoulder)),
+    shoulderWidth: width,
+    // sideways hand offset from its shoulder, in shoulder widths (the neutral for pan)
+    armDx: {
+      left: (kp.left_wrist.x - kp.left_shoulder.x) / width,
+      right: (kp.right_wrist.x - kp.right_shoulder.x) / width,
+    },
     centerX: shoulderC.x,
     tilt: Math.atan2(kp.right_shoulder.y - kp.left_shoulder.y, kp.right_shoulder.x - kp.left_shoulder.x),
   };
@@ -57,14 +68,23 @@ export function retarget(kp, cal, hand = "right") {
 
   const lift = angleBetween(upper, torsoDown);            // 0 hanging .. PI overhead
   const elbow = angleBetween(sub(s, e), fore);            // PI straight .. 0 folded
-  const foreFromDown = angleBetween(fore, torsoDown);     // 0 pointing down .. PI up
   const shift = (shoulderC.x - cal.centerX) / sw;
+  const armDx = (w.x - s.x) / sw - cal.armDx[hand];
+
+  const shoulder_lift = K.liftHang - (lift / Math.PI) * (K.liftHang - K.liftUp);
+  const elbow_flex = -elbow;
+  // The elbow bends the same way whichever side the forearm swings to; the wrist gets the sign.
+  // swing > 0: forearm swung outward (away from the body) relative to the upper arm, so the blade tips forward.
+  const outward = hand === "right" ? 1 : -1;
+  const dir = (v) => Math.atan2(outward * v.x, -v.y);      // 0 = up, PI/2 = outward, PI = down (image y points down)
+  let swing = dir(fore) - dir(upper);
+  swing = Math.atan2(Math.sin(swing), Math.cos(swing));    // wrap to (-PI, PI]
 
   return {
-    shoulder_pan: -(K.panShift * shift + K.panTilt * tilt),   // robot +pan is toward screen-left
-    shoulder_lift: K.liftHang - (lift / Math.PI) * (K.liftHang - K.liftUp),
-    elbow_flex: -elbow,
-    wrist_flex: K.wrist * (Math.PI / 2 - foreFromDown),
+    shoulder_pan: -(K.panArm * armDx + K.panShift * shift + K.panTilt * tilt), // robot +pan is toward screen-left
+    shoulder_lift,
+    elbow_flex,
+    wrist_flex: K.wrist * swing,
     wrist_roll: 0,                                            // optional per spec; off until the basics feel right
     gripper: 0,
   };
@@ -72,7 +92,7 @@ export function retarget(kp, cal, hand = "right") {
 
 // ---- one-euro filter ----
 class OneEuro {
-  constructor(minCutoff = 1.5, beta = 0.08, dCutoff = 1) {
+  constructor(minCutoff = 1, beta = 0.05, dCutoff = 1) {
     Object.assign(this, { minCutoff, beta, dCutoff, x: null, dx: 0, t: 0 });
   }
   static alpha(cutoff, dt) { const tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dt); }
@@ -154,7 +174,11 @@ export function createPose({ video, overlay, limits }) {
     pose.calProgress = (now - calStart) / (HANDS_UP_SECONDS * 1000);
     if (pose.calProgress < 1) return;
     const avg = (key) => samples.reduce((a, s) => a + s[key], 0) / samples.length;
-    pose.cal = { shoulderWidth: avg("shoulderWidth"), centerX: avg("centerX"), tilt: avg("tilt") };
+    const avgDx = (h) => samples.reduce((a, s) => a + s.armDx[h], 0) / samples.length;
+    pose.cal = {
+      shoulderWidth: avg("shoulderWidth"), centerX: avg("centerX"), tilt: avg("tilt"),
+      armDx: { left: avgDx("left"), right: avgDx("right") },
+    };
     pose.state = "tracking";
   }
 
@@ -164,7 +188,9 @@ export function createPose({ video, overlay, limits }) {
     for (const [name, v] of Object.entries(raw)) {
       if (!Number.isFinite(v)) continue; // degenerate frame (e.g. overlapping keypoints): keep the last target
       filters[name] ??= new OneEuro();
-      const f = filters[name].filter(v, t);
+      Object.assign(filters[name], { minCutoff: K.minCutoff, beta: K.beta });
+      let f = filters[name].filter(v, t);
+      if (name in pose.targets && Math.abs(f - pose.targets[name]) < K.deadzone) f = pose.targets[name]; // dead zone against jitter
       const { lower, upper } = limits[name];
       if (f < lower || f > upper) pose.clamped.add(name);
       pose.targets[name] = clamp(f, lower, upper);
