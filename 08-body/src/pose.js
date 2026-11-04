@@ -17,7 +17,19 @@ const K = {
   roll: Math.PI,
 };
 
-const REQUIRED = ["left_shoulder", "right_shoulder", "left_hip", "right_hip", "left_elbow", "right_elbow", "left_wrist", "right_wrist"];
+const REQUIRED = ["left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"];
+
+// laptop cameras often cannot see the hips: estimate them below the shoulders when missing
+export function withHips(kp) {
+  if (kp.left_hip && kp.right_hip) return kp;
+  const sw = len(sub(kp.right_shoulder, kp.left_shoulder));
+  const drop = 1.4 * sw;
+  return {
+    ...kp,
+    left_hip: kp.left_hip ?? { x: kp.left_shoulder.x, y: kp.left_shoulder.y + drop },
+    right_hip: kp.right_hip ?? { x: kp.right_shoulder.x, y: kp.right_shoulder.y + drop },
+  };
+}
 
 export const BONES = [
   ["left_shoulder", "right_shoulder"], ["left_shoulder", "left_hip"], ["right_shoulder", "right_hip"], ["left_hip", "right_hip"],
@@ -98,11 +110,16 @@ export function createPose({ video, overlay, limits }) {
     targets: {},             // filtered + clamped joint targets
     clamped: new Set(),
     hz: 0,
+    detected: 0,             // people the model sees right now
+    missing: [],             // required keypoints not yet seen
     async start() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: VIDEO_W, height: VIDEO_H }, audio: false });
       video.srcObject = stream;
       await video.play();
-      const net = await ml5.bodyPose("MoveNet", { modelType: "SINGLEPOSE_LIGHTNING" });
+      // ml5.bodyPose returns immediately; the model is only usable once its callback fires
+      const net = await new Promise((resolve) => {
+        const n = ml5.bodyPose("MoveNet", { modelType: "SINGLEPOSE_LIGHTNING" }, () => resolve(n));
+      });
       pose.state = "waiting";
       net.detectStart(video, onResults);
     },
@@ -120,17 +137,19 @@ export function createPose({ video, overlay, limits }) {
     for (const k of results[0]?.keypoints ?? []) {
       if (k.confidence >= MIN_CONF) lastGood[k.name] = { x: VIDEO_W - k.x, y: k.y };
     }
-    const ready = REQUIRED.every((n) => lastGood[n]);
+    pose.detected = results.length;
+    pose.missing = REQUIRED.filter((n) => !lastGood[n]);
     drawOverlay(results[0]?.keypoints);
-    if (!ready) return;
+    if (pose.missing.length) return;
 
-    if (pose.state === "waiting" || pose.state === "calibrating") calibrate(now);
-    else track(now / 1000);
+    const kp = withHips(lastGood);
+    if (pose.state === "waiting" || pose.state === "calibrating") calibrate(now, kp);
+    else track(now / 1000, kp);
   }
 
-  function calibrate(now) {
+  function calibrate(now, kp) {
     if (pose.state === "waiting") { pose.state = "calibrating"; calStart = now; samples = []; }
-    samples.push(measure(lastGood));
+    samples.push(measure(kp));
     pose.calProgress = (now - calStart) / (CAL_SECONDS * 1000);
     if (pose.calProgress < 1) return;
     const avg = (key) => samples.reduce((a, s) => a + s[key], 0) / samples.length;
@@ -138,10 +157,11 @@ export function createPose({ video, overlay, limits }) {
     pose.state = "tracking";
   }
 
-  function track(t) {
-    const raw = retarget(lastGood, pose.cal, pose.hand);
+  function track(t, kp) {
+    const raw = retarget(kp, pose.cal, pose.hand);
     pose.clamped.clear();
     for (const [name, v] of Object.entries(raw)) {
+      if (!Number.isFinite(v)) continue; // degenerate frame (e.g. overlapping keypoints): keep the last target
       filters[name] ??= new OneEuro();
       const f = filters[name].filter(v, t);
       const { lower, upper } = limits[name];
@@ -150,18 +170,24 @@ export function createPose({ video, overlay, limits }) {
     }
   }
 
-  function drawOverlay(kps) {
+  // draws everything the model returns: confident points bright, doubtful ones dim
+  function drawOverlay(kps = []) {
     ctx.clearRect(0, 0, VIDEO_W, VIDEO_H);
-    const at = (n) => lastGood[n];
+    const byName = Object.fromEntries(kps.map((k) => [k.name, { x: VIDEO_W - k.x, y: k.y, c: k.confidence }]));
     ctx.lineWidth = 3;
     for (const [a, b] of BONES) {
-      if (!at(a) || !at(b)) continue;
+      if (!byName[a] || !byName[b]) continue;
       const sword = a.startsWith(pose.hand) && b.startsWith(pose.hand) && (a.includes("elbow") || b.includes("wrist"));
-      ctx.strokeStyle = sword ? "#30f0ff" : "#5b6785";
-      ctx.beginPath(); ctx.moveTo(at(a).x, at(a).y); ctx.lineTo(at(b).x, at(b).y); ctx.stroke();
+      ctx.globalAlpha = Math.min(byName[a].c, byName[b].c) >= MIN_CONF ? 1 : 0.25;
+      ctx.strokeStyle = sword ? "#30f0ff" : "#8a93a6";
+      ctx.beginPath(); ctx.moveTo(byName[a].x, byName[a].y); ctx.lineTo(byName[b].x, byName[b].y); ctx.stroke();
     }
-    ctx.fillStyle = "#ffb020";
-    for (const k of kps ?? []) if (k.confidence >= MIN_CONF) { ctx.beginPath(); ctx.arc(VIDEO_W - k.x, k.y, 4, 0, 7); ctx.fill(); }
+    for (const k of Object.values(byName)) {
+      ctx.globalAlpha = k.c >= MIN_CONF ? 1 : 0.3;
+      ctx.fillStyle = k.c >= MIN_CONF ? "#ffb020" : "#ff3050";
+      ctx.beginPath(); ctx.arc(k.x, k.y, 5, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   return pose;

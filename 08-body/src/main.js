@@ -85,6 +85,7 @@ const pose = createPose({
   overlay: document.getElementById("overlay"),
   limits: me.limits,
 });
+window.duel = { me, sliders, pose };
 let cameraError = null;
 pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
 addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "c") pose.recalibrate(); });
@@ -98,7 +99,9 @@ addEventListener("resize", () => {
 
 const MESSAGES = {
   starting: "starting camera and model…",
-  waiting: "step back ~2 m so your arms and hips are in view",
+  waiting: () => pose.detected === 0
+    ? "no person detected: face the camera, step back, check the light"
+    : `can't see yet: ${pose.missing.join(", ")} (red dots = low confidence)`,
   calibrating: () => `hold a neutral pose, arms at your sides… ${Math.max(1, Math.ceil(3 - pose.calProgress * 3))}`,
   tracking: null,
 };
@@ -112,6 +115,7 @@ renderer.setAnimationLoop((now) => {
 
   if (control.camera && pose.state === "tracking") {
     for (const [name, target] of Object.entries(pose.targets)) {
+      if (!Number.isFinite(target)) continue;
       const step = MAX_VELOCITY * dt;
       current[name] += Math.max(-step, Math.min(step, target - current[name]));
     }
