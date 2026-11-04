@@ -3,6 +3,8 @@
 export const VIDEO_W = 640;
 export const VIDEO_H = 480;
 const MIN_CONF = 0.3;
+const HAND_INTERVAL_MS = 70;   // the hand model runs slower than the body model to save GPU
+const HAND_MATCH_PX = 110;     // a detected hand counts as the sword hand if its wrist is this close to the body wrist
 const HANDS_UP_SECONDS = 1.5; // hold both hands up to start; that pose also calibrates
 
 // retargeting constants, mapped from how the SO-100 actually moves:
@@ -15,7 +17,7 @@ export const K = {
   panTilt: 1.0,    // rad per rad of shoulder-line tilt (lean)
   liftHang: 3.5,   // arm hanging  -> SO-100 reaches forward-low (it cannot hang)
   liftUp: 1.57,    // arm overhead -> SO-100 points straight up
-  wrist: 0.8,      // blade tilt per radian of forearm swing relative to the upper arm
+  wrist: 1.0,      // blade tilt per radian of hand bend relative to the forearm
   minCutoff: 0.8,  // filter: lower = smoother but laggier
   beta: 0.05,      // filter: higher = less lag on fast moves
   deadzone: 0.03,  // rad: ignore changes smaller than this (kills jitter)
@@ -73,18 +75,18 @@ export function retarget(kp, cal, hand = "right") {
 
   const shoulder_lift = K.liftHang - (lift / Math.PI) * (K.liftHang - K.liftUp);
   const elbow_flex = -elbow;
-  // The elbow bends the same way whichever side the forearm swings to; the wrist gets the sign.
-  // swing > 0: forearm swung outward (away from the body) relative to the upper arm, so the blade tips forward.
+  // wrist: angle between the forearm line (elbow -> wrist) and the hand line (wrist -> middle knuckle),
+  // positive when the hand bends outward (away from the body), which tips the blade forward
   const outward = hand === "right" ? 1 : -1;
   const dir = (v) => Math.atan2(outward * v.x, -v.y);      // 0 = up, PI/2 = outward, PI = down (image y points down)
-  let swing = dir(fore) - dir(upper);
-  swing = Math.atan2(Math.sin(swing), Math.cos(swing));    // wrap to (-PI, PI]
+  let bend = kp.hand_vec ? dir(kp.hand_vec) - dir(fore) : 0;
+  bend = Math.atan2(Math.sin(bend), Math.cos(bend));        // wrap to (-PI, PI]
 
   return {
     shoulder_pan: -(K.panArm * armDx + K.panShift * shift + K.panTilt * tilt), // robot +pan is toward screen-left
     shoulder_lift,
     elbow_flex,
-    wrist_flex: K.wrist * swing,
+    wrist_flex: K.wrist * bend,
     wrist_roll: 0,                                            // optional per spec; off until the basics feel right
     gripper: 0,
   };
@@ -121,6 +123,9 @@ export function createPose({ video, overlay, limits }) {
     hz: 0,
     detected: 0,             // people the model sees right now
     missing: [],             // required keypoints not yet seen
+    handHz: 0,
+    handSeen: false,
+    handVec: null,
     get status() {
       if (pose.state === "starting") return "starting camera and model…";
       if (pose.state === "tracking") return "";
@@ -139,9 +144,42 @@ export function createPose({ video, overlay, limits }) {
       });
       pose.state = "waiting";
       net.detectStart(video, onResults);
+      startHands();
     },
     recalibrate() { pose.state = "waiting"; pose.calProgress = 0; samples = []; calStart = null; for (const f of Object.values(filters)) f.x = null; },
   };
+
+  // hand model: finds the wrist and knuckles so we can draw a hand line and measure its angle to the forearm
+  let handLine = null, handSeenAt = 0, handFrames = 0, handRateT = performance.now();
+  async function startHands() {
+    const hands = await new Promise((resolve) => {
+      const n = ml5.handPose({ maxHands: 2, modelType: "lite", flipped: false }, () => resolve(n));
+    });
+    const loop = async () => {
+      const t0 = performance.now();
+      await new Promise((resolve) => hands.detect(video, (r) => { onHands(r ?? []); resolve(); }));
+      setTimeout(loop, Math.max(0, HAND_INTERVAL_MS - (performance.now() - t0)));
+    };
+    loop();
+  }
+
+  function onHands(results) {
+    const now = performance.now();
+    handFrames++;
+    if (now - handRateT >= 1000) { pose.handHz = (handFrames * 1000) / (now - handRateT); handFrames = 0; handRateT = now; }
+    const bodyWrist = lastGood[`${pose.hand}_wrist`];
+    let best = null, bestDist = HAND_MATCH_PX;
+    for (const h of results) {
+      const w = h.wrist, m = h.middle_finger_mcp;
+      if (!w || !m || !bodyWrist) continue;
+      const d = Math.hypot(VIDEO_W - w.x - bodyWrist.x, w.y - bodyWrist.y); // pick the hand nearest the body-pose wrist
+      if (d < bestDist) { bestDist = d; best = { wrist: { x: VIDEO_W - w.x, y: w.y }, mcp: { x: VIDEO_W - m.x, y: m.y } }; }
+    }
+    handLine = best;
+    pose.handSeen = !!best;
+    if (best) { handSeenAt = now; pose.handVec = sub(best.mcp, best.wrist); }
+    else if (now - handSeenAt > 400) pose.handVec = null; // stale: stop trusting it
+  }
 
   let samples = [], calStart = null, frames = 0, rateT = performance.now();
 
@@ -183,7 +221,7 @@ export function createPose({ video, overlay, limits }) {
   }
 
   function track(t, kp) {
-    const raw = retarget(kp, pose.cal, pose.hand);
+    const raw = retarget({ ...kp, hand_vec: pose.handVec }, pose.cal, pose.hand);
     pose.clamped.clear();
     for (const [name, v] of Object.entries(raw)) {
       if (!Number.isFinite(v)) continue; // degenerate frame (e.g. overlapping keypoints): keep the last target
@@ -215,6 +253,11 @@ export function createPose({ video, overlay, limits }) {
       ctx.beginPath(); ctx.arc(k.x, k.y, 6, 0, 7); ctx.fill();
     }
     ctx.globalAlpha = 1;
+    if (handLine) {
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = "#ff3070";
+      ctx.beginPath(); ctx.moveTo(handLine.wrist.x, handLine.wrist.y); ctx.lineTo(handLine.mcp.x, handLine.mcp.y); ctx.stroke();
+    }
     drawStatus();
   }
 

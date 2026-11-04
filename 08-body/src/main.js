@@ -84,7 +84,7 @@ feel.add(K, "deadzone", 0, 0.15, 0.005).name("jitter dead zone");
 feel.add(K, "panArm", 0, 2, 0.05).name("pan: arm side swing");
 feel.add(K, "panShift", 0, 2, 0.05).name("pan: body shift");
 feel.add(K, "panTilt", 0, 3, 0.05).name("pan: lean");
-feel.add(K, "wrist", 0, 1.5, 0.05).name("wrist follows forearm");
+feel.add(K, "wrist", 0, 1.5, 0.05).name("wrist: hand bend gain");
 
 const hud = createHud({ jointNames: me.jointNames, limits: me.limits });
 document.getElementById("status").remove();
@@ -128,7 +128,7 @@ renderer.setAnimationLoop((now) => {
   }
 
   hud.update({
-    angles: current, clamped, perceptionHz: pose.hz, controlHz,
+    angles: current, clamped, perceptionHz: pose.hz, handHz: pose.handHz, controlHz,
     message: cameraError ? `camera unavailable (${cameraError}) — use the sliders` : pose.status,
   });
   controls.update();

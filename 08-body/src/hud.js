@@ -29,7 +29,7 @@ export function createHud({ jointNames, limits }) {
   });
 
   return {
-    update({ angles, clamped, perceptionHz, controlHz, message }) {
+    update({ angles, clamped, perceptionHz, handHz, controlHz, message }) {
       for (const name of Object.keys(rows)) {
         const { lower, upper } = limits[name];
         const frac = (angles[name] - lower) / (upper - lower);
@@ -38,7 +38,7 @@ export function createHud({ jointNames, limits }) {
         rows[name].classList.toggle("clamped", clamped.has(name));
       }
       msg.textContent = message ?? "";
-      rates.textContent = `perception ${perceptionHz ? perceptionHz.toFixed(0) : "--"} Hz · control ${controlHz.toFixed(0)} Hz · network 20 Hz`;
+      rates.textContent = `perception ${perceptionHz ? perceptionHz.toFixed(0) : "--"} Hz (hand ${handHz ? handHz.toFixed(0) : "--"}) · control ${controlHz.toFixed(0)} Hz · network 20 Hz`;
     },
   };
 }
