@@ -105,6 +105,16 @@ const params = new URLSearchParams(location.search);
 // no ?room= and no ?solo: show the start screen first (it reloads with the chosen mode); camera starts only after that
 const menuOpen = !params.has("room") && !params.has("solo");
 if (menuOpen) showMenu();
+else {
+  // a ?room= or ?solo URL survives a refresh, so give a way back to the start screen
+  const leave = () => { location.href = location.origin + location.pathname; };
+  const btn = document.createElement("button");
+  btn.id = "leave";
+  btn.textContent = "← menu (Esc)";
+  btn.onclick = leave;
+  document.body.appendChild(btn);
+  addEventListener("keydown", (e) => { if (e.key === "Escape") leave(); });
+}
 if (menuOpen || params.has("nocam")) { cameraError = menuOpen ? null : "camera off (?nocam)"; control.camera = false; }
 else pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
 addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "c") pose.recalibrate(); });
