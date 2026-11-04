@@ -135,6 +135,7 @@ export function createPose({ video, overlay, limits }) {
       if (k.confidence >= MIN_CONF) lastGood[k.name] = { x: VIDEO_W - k.x, y: k.y };
     }
     pose.detected = results.length;
+    pose.last = results[0];
     pose.missing = REQUIRED.filter((n) => !lastGood[n]);
     drawOverlay(results[0]?.keypoints);
     if (pose.missing.length) { if (pose.state === "calibrating") pose.recalibrate(); return; }
