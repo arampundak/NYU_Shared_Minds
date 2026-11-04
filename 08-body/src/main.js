@@ -97,15 +97,6 @@ addEventListener("resize", () => {
   composer.setSize(innerWidth, innerHeight);
 });
 
-const MESSAGES = {
-  starting: "starting camera and model…",
-  waiting: () => pose.detected === 0
-    ? "no person detected: face the camera, step back, check the light"
-    : `can't see yet: ${pose.missing.join(", ")} (red dots = low confidence)`,
-  calibrating: () => `hold a neutral pose, arms at your sides… ${Math.max(1, Math.ceil(3 - pose.calProgress * 3))}`,
-  tracking: null,
-};
-
 let last = performance.now(), frames = 0, rateT = last, controlHz = 60, clamped = new Set();
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
@@ -127,10 +118,9 @@ renderer.setAnimationLoop((now) => {
     clamped = new Set();
   }
 
-  const m = cameraError ? `camera unavailable (${cameraError}) — use the sliders` : MESSAGES[pose.state];
   hud.update({
     angles: current, clamped, perceptionHz: pose.hz, controlHz,
-    message: typeof m === "function" ? m() : m,
+    message: cameraError ? `camera unavailable (${cameraError}) — use the sliders` : pose.status,
   });
   controls.update();
   composer.render();
