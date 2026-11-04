@@ -38,7 +38,7 @@ export function createHud({ jointNames, limits }) {
       scoreEl.innerHTML = `<b class="me">YOU ${scores[0]}</b><span>${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</span><b class="opp">${scores[1]} ${opponent}</b>`;
       bannerEl.textContent = banner;
     },
-    update({ angles, clamped, perceptionHz, handHz, controlHz, message }) {
+    update({ angles, clamped, perceptionHz, handHz, controlHz, net, message }) {
       for (const name of Object.keys(rows)) {
         const { lower, upper } = limits[name];
         const frac = (angles[name] - lower) / (upper - lower);
@@ -47,7 +47,7 @@ export function createHud({ jointNames, limits }) {
         rows[name].classList.toggle("clamped", clamped.has(name));
       }
       msg.textContent = message ?? "";
-      rates.textContent = `perception ${perceptionHz ? perceptionHz.toFixed(0) : "--"} Hz (hand ${handHz ? handHz.toFixed(0) : "--"}) · control ${controlHz.toFixed(0)} Hz · network 20 Hz`;
+      rates.textContent = `perception ${perceptionHz ? perceptionHz.toFixed(0) : "--"} Hz (hand ${handHz ? handHz.toFixed(0) : "--"}) · control ${controlHz.toFixed(0)} Hz · network ${net ? `${net.transport} ${net.outHz.toFixed(0)}↑ ${net.inHz.toFixed(0)}↓ — ${net.status}` : "solo (offline)"}`;
     },
   };
 }

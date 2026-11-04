@@ -23,6 +23,7 @@ export function createGame({ robots, fx, judge = [0, 1] }) {
     banner: "press Enter to start",
     bannerTime: Infinity,
     judge,
+    onHit: null,                // set by main: tell the opponent about a hit we judged on our own robot
 
     start() {
       Object.assign(game, {
@@ -33,6 +34,17 @@ export function createGame({ robots, fx, judge = [0, 1] }) {
     },
 
     say(text, seconds = 1.2) { game.banner = text; game.bannerTime = seconds; },
+
+    // the opponent's client judged that our blade hit them: it is the truth, we just show it
+    remoteHit({ w, link }) {
+      if (game.state !== "playing") return;
+      game.scores[0] += w;
+      game.flash[1] = 1;
+      game.recoil[1] = 1;
+      const seg = robots[1].segments().find((l) => l.name === link) ?? robots[1].segments()[2];
+      fx.hit(seg.a.clone().lerp(seg.b, 0.5), robots[0].bladeColor);
+      game.say(`HIT  +${w} (${link})`);
+    },
 
     // extra joint offsets so arms get pushed back on a clash or hit
     recoilOffset(i, side = 1) {
@@ -85,6 +97,7 @@ export function createGame({ robots, fx, judge = [0, 1] }) {
           game.recoil[d] = 1;
           fx.hit(hit.point, robots[a].bladeColor);
           game.say(`${a === 0 ? "HIT" : "OUCH"}  +${hit.link.weight} (${hit.link.name})`);
+          game.onHit?.({ w: hit.link.weight, link: hit.link.name, by: a });
         }
       }
 

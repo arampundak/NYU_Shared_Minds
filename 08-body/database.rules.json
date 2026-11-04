@@ -1,0 +1,37 @@
+{
+  "rules": {
+    "players": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "rooms": {
+      ".read": "auth != null",
+      "$room": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider != 'anonymous' && (!data.exists() || data.child('owner').val() === auth.uid || (data.child('status').val() === 'claimed' && data.child('claimedAt').val() < now - 180000))",
+        ".validate": "newData.child('owner').val() === auth.uid"
+      }
+    },
+    "items": {
+      ".read": "auth != null",
+      ".write": false
+    },
+
+    "duels": {
+      "$room": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['s', 'j'])"
+        }
+      }
+    },
+    "duelFlags": {
+      "$room": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

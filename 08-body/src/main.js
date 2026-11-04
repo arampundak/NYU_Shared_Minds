@@ -11,6 +11,7 @@ import { createHud } from "./hud.js";
 import { createFx } from "./fx.js";
 import { createGame } from "./game.js";
 import { dummyAngles } from "./dummy.js";
+import { createNet } from "./net.js";
 
 const BASE_DISTANCE = 0.9; // metres between bases; tuned so blades only meet in the middle
 
@@ -98,7 +99,9 @@ const pose = createPose({
   limits: me.limits,
 });
 let cameraError = null;
-pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
+const params = new URLSearchParams(location.search);
+if (params.has("nocam")) { cameraError = "camera off (?nocam)"; control.camera = false; }
+else pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
 addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "c") pose.recalibrate(); });
 
 addEventListener("resize", () => {
@@ -109,13 +112,28 @@ addEventListener("resize", () => {
 });
 
 const fx = createFx(scene);
-// solo mode: a scripted dummy plays the opponent and this client judges both robots
-const solo = true;
+// no ?room= -> solo: a scripted dummy plays the opponent and this client judges both robots.
+// ?room=xyz -> two players; each client judges hits on its own robot only (the defender's screen is the truth).
+const room = params.get("room");
+const solo = !room;
+const net = solo ? null : createNet({ room, jointNames: me.jointNames, prefer: params.get("net") === "firebase" ? "firebase" : "p5live" });
 const game = createGame({ robots, fx, judge: solo ? [0, 1] : [0] });
 const OPPONENT = solo ? "DUMMY" : "OPP";
 
+if (net) {
+  game.onHit = (hit) => net.sendEvent({ k: "hit", ...hit });
+  net.onEvent((ev) => {
+    if (ev.k === "hit") game.remoteHit(ev);
+    else if (ev.k === "start" && (game.state === "idle" || game.state === "over")) game.start();
+  });
+}
+
 addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (game.state === "idle" || game.state === "over")) game.start();
+  if (e.key === "Enter" && (game.state === "idle" || game.state === "over")) {
+    if (net && !net.connected) return;
+    game.start();
+    net?.sendEvent({ k: "start" });
+  }
 });
 
 let last = performance.now(), frames = 0, rateT = last, controlHz = 60, clamped = new Set(), clock = 0, autoStarted = false;
@@ -123,7 +141,7 @@ let last = performance.now(), frames = 0, rateT = last, controlHz = 60, clamped 
 function tick(dt) {
   clock += dt;
   if (control.camera && pose.state === "tracking") {
-    if (!autoStarted && game.state === "idle") { autoStarted = true; game.start(); }
+    if (solo && !autoStarted && game.state === "idle") { autoStarted = true; game.start(); }
     for (const [name, target] of Object.entries(pose.targets)) {
       if (!Number.isFinite(target)) continue;
       const step = MAX_VELOCITY * dt;
@@ -141,18 +159,26 @@ function tick(dt) {
     const r = game.recoilOffset(i, side);
     return Object.fromEntries(Object.entries(base).map(([k, v]) => [k, v + (r[k] ?? 0)]));
   };
-  me.setJoints(withRecoil(current, 0, -1));
+  const shown = withRecoil(current, 0, -1);
+  me.setJoints(shown);
   if (solo) {
     const d = dummyAngles(clock);
     Object.assign(sliders[1], d);
     robots[1].setJoints(withRecoil(d, 1, 1));
+  } else {
+    net.sendJoints(shown);
+    const o = net.sample();
+    if (o) {
+      Object.assign(sliders[1], o);
+      robots[1].setJoints(withRecoil(o, 1, 1));
+    }
   }
 
   game.update(dt);
   fx.update(dt);
 }
 
-window.duel = { me, robots, sliders, pose, game, tick };
+window.duel = { me, robots, sliders, pose, game, tick, net };
 
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
@@ -163,10 +189,14 @@ renderer.setAnimationLoop((now) => {
   tick(dt);
 
   hud.update({
-    angles: current, clamped, perceptionHz: pose.hz, handHz: pose.handHz, controlHz,
+    angles: current, clamped, perceptionHz: pose.hz, handHz: pose.handHz, controlHz, net,
     message: cameraError ? `camera unavailable (${cameraError}) — use the sliders` : pose.status,
   });
-  hud.setGame({ scores: game.scores, time: game.time, banner: game.banner, opponent: OPPONENT });
+  const waiting = net && !net.connected && (game.state === "idle" || game.state === "over");
+  hud.setGame({
+    scores: game.scores, time: game.time, opponent: OPPONENT,
+    banner: waiting ? `waiting for opponent… room "${room}"` : game.banner,
+  });
   controls.update();
   composer.render();
 });
