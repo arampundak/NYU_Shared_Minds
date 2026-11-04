@@ -12,6 +12,8 @@ import { createFx } from "./fx.js";
 import { createGame } from "./game.js";
 import { dummyAngles } from "./dummy.js";
 import { createNet } from "./net.js";
+import { createFrames } from "./frames.js";
+import { showMenu, getName } from "./menu.js";
 
 const BASE_DISTANCE = 0.9; // metres between bases; tuned so blades only meet in the middle
 
@@ -100,7 +102,10 @@ const pose = createPose({
 });
 let cameraError = null;
 const params = new URLSearchParams(location.search);
-if (params.has("nocam")) { cameraError = "camera off (?nocam)"; control.camera = false; }
+// no ?room= and no ?solo: show the start screen first (it reloads with the chosen mode); camera starts only after that
+const menuOpen = !params.has("room") && !params.has("solo");
+if (menuOpen) showMenu();
+if (menuOpen || params.has("nocam")) { cameraError = menuOpen ? null : "camera off (?nocam)"; control.camera = false; }
 else pose.start().catch((e) => { cameraError = e.message || String(e); control.camera = false; });
 addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "c") pose.recalibrate(); });
 
@@ -116,9 +121,12 @@ const fx = createFx(scene);
 // ?room=xyz -> two players; each client judges hits on its own robot only (the defender's screen is the truth).
 const room = params.get("room");
 const solo = !room;
-const net = solo ? null : createNet({ room, jointNames: me.jointNames, prefer: params.get("net") === "firebase" ? "firebase" : "p5live" });
+const inviteLink = room ? `${location.origin}${location.pathname}?room=${encodeURIComponent(room)}` : "";
+const myName = (getName() || "YOU").toUpperCase();
+const net = solo ? null : createNet({ room, jointNames: me.jointNames, name: myName, prefer: params.get("net") === "firebase" ? "firebase" : "p5live" });
 const game = createGame({ robots, fx, judge: solo ? [0, 1] : [0] });
-const OPPONENT = solo ? "DUMMY" : "OPP";
+const opponentName = () => (solo ? "DUMMY" : (net.opponentName || "OPP")).toUpperCase();
+const overlays = createFrames(robots, scene);
 
 if (net) {
   game.onHit = (hit) => net.sendEvent({ k: "hit", ...hit });
@@ -129,7 +137,8 @@ if (net) {
 }
 
 addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (game.state === "idle" || game.state === "over")) {
+  if (e.key.toLowerCase() === "l" && net) navigator.clipboard?.writeText(inviteLink).then(() => game.say("invite link copied", 1.5));
+  if (e.key === "Enter" && !menuOpen && (game.state === "idle" || game.state === "over")) {
     if (net && !net.connected) return;
     game.start();
     net?.sendEvent({ k: "start" });
@@ -176,6 +185,7 @@ function tick(dt) {
 
   game.update(dt);
   fx.update(dt);
+  overlays.update();
 }
 
 window.duel = { me, robots, sliders, pose, game, tick, net };
@@ -194,8 +204,10 @@ renderer.setAnimationLoop((now) => {
   });
   const waiting = net && !net.connected && (game.state === "idle" || game.state === "over");
   hud.setGame({
-    scores: game.scores, time: game.time, opponent: OPPONENT,
-    banner: waiting ? `waiting for opponent… room "${room}"` : game.banner,
+    scores: game.scores, time: game.time, names: [myName, opponentName()],
+    banner: menuOpen ? "" : waiting ? "waiting for opponent…" : game.banner,
+    sub: menuOpen ? "" : waiting ? `send them this link:  ${inviteLink}  (L copies it)`
+      : game.state === "over" ? "press Enter to play again" : "",
   });
   controls.update();
   composer.render();

@@ -74,7 +74,7 @@ function firebaseTransport(room, hooks, tag) {
   };
 }
 
-export function createNet({ room, jointNames, prefer = "p5live" }) {
+export function createNet({ room, jointNames, name = "", prefer = "p5live" }) {
   const tag = Math.random().toString(36).slice(2, 7);
   const net = {
     room,
@@ -83,6 +83,7 @@ export function createNet({ room, jointNames, prefer = "p5live" }) {
     connected: false,
     inHz: 0,
     outHz: 0,
+    opponentName: "",
   };
 
   let tr = null, seq = 0, evSeq = 0, lastSend = 0, lastHeard = -Infinity, opponentId = null;
@@ -98,6 +99,7 @@ export function createNet({ room, jointNames, prefer = "p5live" }) {
     let m;
     try { m = typeof raw === "string" ? JSON.parse(raw) : raw; } catch { return; }
     if (!m || !Array.isArray(m.j)) return;
+    if (typeof m.n === "string") net.opponentName = m.n.slice(0, 12);
     opponentId = id;                // two players: the most recent sender other than us is the opponent
     const now = performance.now();
     lastHeard = now;
@@ -116,7 +118,7 @@ export function createNet({ room, jointNames, prefer = "p5live" }) {
     if (!tr || (!force && now - lastSend < SEND_MS)) return;
     lastSend = now;
     events = events.filter((e) => now - e.at < EVENT_KEEP_MS);
-    tr.send({ s: seq++, t: Date.now(), j: latestJoints, ev: events.map(({ id, k, ...rest }) => ({ id, k, ...rest })) });
+    tr.send({ s: seq++, t: Date.now(), n: name, j: latestJoints, ev: events.map(({ id, k, ...rest }) => ({ id, k, ...rest })) });
     outCount++;
   }
 
